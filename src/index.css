@@ -1,0 +1,1009 @@
+/* 색상·폰트 토큰은 docs/현장관리어플_기능데모.html 기준 */
+:root {
+  --bg: #f5f5f3;
+  --surface: #ffffff;
+  --surface-2: #efefec;
+  --border: #e0dfda;
+  --text: #1c2321;
+  --text-secondary: #6b6b66;
+  --accent: #2b4570;
+  --accent-bg: #e6ecf4;
+  --teal: #0f6e56;
+  --teal-bg: #e1f5ee;
+  --orange: #d97e30;
+  --orange-bg: #fbe8d6;
+  --red: #b94a3d;
+  --red-bg: #f7e3e0;
+  --mono: 'SFMono-Regular', Consolas, monospace;
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard', 'Malgun Gothic', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+select,
+input[type='date'] {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  font-family: inherit;
+}
+
+.back-btn {
+  display: inline-block;
+  padding: 0 0 12px;
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+  padding: 9px 4px;
+  margin-right: 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--surface-2);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn.block {
+  display: block;
+  width: 100%;
+}
+
+.btn.danger {
+  background: var(--red-bg);
+  border-color: var(--red-bg);
+  color: var(--red);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* calendar */
+.cal-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.cal-dow {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.cal-cell {
+  position: relative;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px;
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.cal-cell.cal-upcoming {
+  border-color: var(--red);
+}
+
+.cal-upcoming-icon {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  color: var(--red);
+}
+
+.cal-cell.empty {
+  border: none;
+  cursor: default;
+}
+
+.cal-cell.cal-full {
+  background: var(--accent-bg);
+}
+
+.cal-cell.cal-half {
+  background: var(--orange-bg);
+}
+
+.cal-cell.cal-selected {
+  outline: 2px solid var(--accent);
+}
+
+.cal-site {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* 어느 예정현장을 방문하는 날인지 출근 정보 아래에 붙여 보여준다 */
+.cal-upcoming-site {
+  display: block;
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 2px;
+}
+
+.attendance-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* list tables (지출비용, 인사관리 등에서 공용) */
+.table {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: grid;
+  align-items: center;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  gap: 6px;
+}
+
+.row:first-child {
+  border-top: none;
+}
+
+.row.head {
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.row.clickable {
+  cursor: pointer;
+}
+
+.row.clickable:hover {
+  background: #fafaf9;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 카드형 요약 지표 (대시보드 등) */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metric-card {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.metric-card .label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.metric-card .value {
+  font-size: 19px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.section-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 14px 0 8px;
+  display: block;
+}
+
+/* badges */
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.badge.teal {
+  background: var(--teal-bg);
+  color: var(--teal);
+}
+
+.badge.orange {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.badge.share {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* 현장 목록 */
+.site-list-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.site-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.site-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.fav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.site-card-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.site-card-name:hover {
+  text-decoration: underline;
+}
+
+.site-card-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.site-card-badges {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 세대표를 공유하는 현장임을 알리는 한 줄 */
+.site-card-share {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.site-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* 예정현장 */
+.upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.upcoming-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.upcoming-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.visit-line {
+  margin: 2px 0 2px 8px;
+  font-size: 13px;
+}
+
+.upcoming-link {
+  display: block;
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.visit-edit-list {
+  margin-bottom: 6px;
+}
+
+.visit-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.visit-row input[type='date'] {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.visit-alarm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* 결제 */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 8px;
+}
+
+.section-header .section-label {
+  margin: 0;
+}
+
+.pay-site-row {
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+}
+
+.pay-person-row {
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+}
+
+.pay-labor-row {
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto;
+}
+
+.receipt-row {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.salary-row {
+  grid-template-columns: 1fr 1fr 1fr 1fr auto;
+}
+
+.hr-row {
+  grid-template-columns: 1fr 1fr 1fr 1fr 1.4fr;
+}
+
+.hr-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.salary-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.salary-form input {
+  width: 110px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.modal-box {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 20px;
+  width: 320px;
+  max-width: 100%;
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-header button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.modal-box label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 10px 0 4px;
+}
+
+.modal-box select {
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions .btn {
+  flex: 1;
+}
+
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 16px;
+}
+
+.auth-box {
+  width: 100%;
+  max-width: 320px;
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.auth-box h1 {
+  font-size: 18px;
+  margin-bottom: 18px;
+}
+
+.auth-box input:not([type='checkbox']) {
+  width: 100%;
+  padding: 9px 10px;
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.auth-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.auth-box .btn + .btn {
+  margin-top: 8px;
+}
+
+.auth-message {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.auth-message.error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.auth-message.notice {
+  background: var(--teal-bg);
+  color: var(--teal);
+}
+
+/* 오프라인 상태 안내 */
+.offline-banner {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+/* 세대표를 다른 현장과 함께 쓰는 중임을 알리는 배너 */
+.share-banner {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* 세대표 공유 설정 모달 */
+/* 현장이 많아도 저장·취소 버튼이 화면 밖으로 밀리지 않도록 목록만 따로 스크롤한다 */
+.share-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* .modal-box label(display:block)보다 구체성이 높아야 flex 배치가 적용된다 */
+.modal-box .share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal-box .share-row:last-child {
+  border-bottom: 0;
+}
+
+.modal-box .share-row.blocked {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.share-row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-row-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* 세대표 수정: 등록된 동 목록 */
+.building-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.building-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.building-row:last-child {
+  border-bottom: 0;
+}
+
+.building-row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.building-row-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.share-warning {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--orange-bg);
+  color: var(--orange);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cal-pending {
+  color: var(--orange);
+}
+
+/* 세대표 툴바 */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.zoom-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.btn.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+/* 세대표: 층은 위에서 아래로, 세대는 좌우로 */
+.sheet-scroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #fafaf9;
+}
+
+.sheet-wrap {
+  transform-origin: top left;
+  width: fit-content;
+}
+
+.building-block {
+  margin-bottom: 18px;
+}
+
+.building-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.unit-table {
+  border-collapse: collapse;
+}
+
+.unit-table td {
+  border: 1px solid var(--border);
+  width: 34px;
+  height: 30px;
+  text-align: center;
+  font-size: 11px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.floor-head {
+  background: var(--surface-2);
+  font-weight: 600;
+  cursor: default;
+  width: 50px !important;
+}
+
+.line-head-top {
+  background: var(--surface-2);
+  font-weight: 600;
+  cursor: default;
+}
+
+.unit-cell.disabled {
+  background: repeating-linear-gradient(45deg, #efefec, #efefec 4px, #f5f5f3 4px, #f5f5f3 8px);
+  cursor: default;
+}
+
+/* 석고 시공이 체크된 세대는 메인 세대표에서 굵은 테두리로 표시 */
+.unit-cell.plaster-marked {
+  border: 2px solid var(--accent) !important;
+}
+
+.unit-cell.defect {
+  background: var(--red-bg);
+}
+
+.mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+/* 세대 상세 사이드 패널 */
+.side-panel {
+  position: fixed;
+  right: 24px;
+  top: 90px;
+  width: 260px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  z-index: 50;
+}
+
+.side-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.side-panel-header button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.check-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.panel-btn {
+  margin-top: 8px;
+}
+
+.defect-item {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.defect-item:hover {
+  background: #fafaf9;
+}
+
+.defect-item.selected {
+  background: var(--accent-bg);
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.defect-item.resolved {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.defect-item.resolved:hover {
+  background: none;
+}
+
+.log-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.log-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.log-item {
+  font-size: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.log-meta,
+.log-empty {
+  font-size: 11px;
+}
+
+/* 모달 입력 */
+.modal-box input:not([type='checkbox']) {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* 설정 */
+.settings-profile-card {
+  max-width: 320px;
+  margin-bottom: 8px;
+}
+
+.settings-profile-card .value {
+  font-size: 15px;
+}
+
+.settings-install-guide {
+  max-width: 420px;
+  margin-bottom: 10px;
+}
+
+.settings-logout {
+  margin-top: 24px;
+}
+
+.settings-version {
+  margin: 28px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 개발자 페이지 */
+.dev-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* iOS는 16px 미만 입력창에 포커스하면 화면을 확대하므로 모바일에서만 키운다 */
+@media (max-width: 760px) {
+  .auth-box input:not([type='checkbox']) {
+    font-size: 16px;
+  }
+
+  /* 좁은 화면에서는 사이드 패널을 하단 시트로 */
+  .side-panel {
+    right: 0;
+    left: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-height: 60vh;
+    border-radius: 12px 12px 0 0;
+  }
+}
