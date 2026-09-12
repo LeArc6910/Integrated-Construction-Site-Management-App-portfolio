@@ -9,7 +9,7 @@
 ## 데모
 
 - **배포 주소**: https://construction-site-app-demo.pages.dev
-- **테스트 계정**: `test@test.com` / `DEMO_PASSWORD` (팀장 권한)
+- **테스트 계정**: `test@test.com` / `test1234!@#$` (팀장 권한)
 
 회원가입은 막혀 있습니다. 위 계정으로 로그인해 둘러보세요.
 
