@@ -1,0 +1,98 @@
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100svh;
+  max-width: 1040px;
+  margin: 0 auto;
+  background: var(--surface);
+}
+
+.sidebar {
+  width: 190px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-brand {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 8px 6px;
+}
+
+.sidebar-role {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 0 8px 14px;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: #e7e7e3;
+}
+
+.nav-item.active {
+  background: #dce3ec;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 22px;
+}
+
+/* 모바일: 사이드바를 상단 가로 스크롤 메뉴로 전환 */
+@media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+    max-width: 100%;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-brand,
+  .sidebar-role,
+  .sidebar-spacer {
+    display: none;
+  }
+
+  .nav-item {
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 3px;
+    width: auto;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+}

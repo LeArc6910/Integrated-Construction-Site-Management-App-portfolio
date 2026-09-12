@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#2b4570"/>
+  <mask id="bldg">
+    <rect x="160" y="96" width="192" height="320" fill="#fff"/>
+    <rect x="196" y="136" width="30" height="30" fill="#000"/>
+    <rect x="286" y="136" width="30" height="30" fill="#000"/>
+    <rect x="196" y="196" width="30" height="30" fill="#000"/>
+    <rect x="286" y="196" width="30" height="30" fill="#000"/>
+    <rect x="196" y="256" width="30" height="30" fill="#000"/>
+    <rect x="286" y="256" width="30" height="30" fill="#000"/>
+    <rect x="226" y="356" width="60" height="60" fill="#000"/>
+  </mask>
+  <rect x="160" y="96" width="192" height="320" fill="#fff" mask="url(#bldg)"/>
+</svg>
