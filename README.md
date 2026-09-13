@@ -101,6 +101,16 @@ npm run dev
 가리키는지 확인하고, 빌드 후에도 번들에 다른 프로젝트 주소나 secret 키가 섞이지 않았는지
 다시 확인합니다. 하나라도 어긋나면 종료 코드 1로 중단합니다.
 
+## 배포
+
+`main`에 푸시하면 Cloudflare Workers Builds가 빌드해서 데모 사이트에 반영합니다.
+별도로 `wrangler deploy`를 실행할 필요는 없습니다.
+
+빌드에 쓰는 Supabase 값은 `.env.production`에 들어 있습니다. 데모 전용 프로젝트의 URL과
+publishable 키라 이미 공개된 번들에 드러나는 값이고, 저장소에 고정해두면 어디서 빌드하든
+항상 데모 프로젝트를 가리킵니다. Vite가 `.env.production`을 `.env`보다 우선 적용하므로
+로컬에 운영 `.env`가 잘못 들어와 있어도 운영 키가 공개 번들에 실리지 않습니다.
+
 ## 변경 기록
 
 [CHANGELOG.md](CHANGELOG.md) 참고.
