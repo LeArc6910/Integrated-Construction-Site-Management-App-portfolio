@@ -6,6 +6,26 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.2] - 2026-09-13
+
+### 수정
+
+- 세대표 수정에서 세대수(라인 수)를 고칠 수 없던 문제. 칸을 비우면 곧바로 1이 되살아나
+  원하는 숫자를 넣을 수 없었고, 지우고 `12`를 치면 112가 되어 세대 칸 112개가 그려졌다.
+  화면을 전체 선택해 덮어쓸 수 있는 PC와 달리 아이폰에서는 입력 자체가 막힌 것처럼 보였다.
+
+### 변경
+
+- 세대수·층수 칸을 입력하는 동안에는 빈 칸으로 두었다가 포커스를 뗄 때 정리한다. 숫자
+  키패드는 그대로 뜬다.
+- 한 동에 둘 수 있는 세대 수를 50으로 제한한다.
+- 모바일에서 모달 입력창 글자를 16px로 키웠다. 아이폰이 입력창을 누를 때 화면을 확대하지
+  않는다.
+
+### 참고
+
+- 스키마 변경 없음.
+
 ## [1.0.1] - 2026-09-13
 
 ### 추가
@@ -53,5 +73,6 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.2]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.2
 [1.0.1]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.1
 [1.0.0]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.0
