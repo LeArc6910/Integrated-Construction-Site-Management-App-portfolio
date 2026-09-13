@@ -1,15 +1,20 @@
 import { useState } from 'react'
 import Modal from '../../components/Modal'
 
+// 한 동에 둘 수 있는 세대(라인) 수 상한. 실수로 큰 숫자를 넣어도 화면이 멈추지 않게 한다.
+const MAX_LINES = 50
+
 function emptyTarget() {
-  return { id: null, name: '', floors: [''] }
+  return { id: null, name: '', floors: [''], lineText: '1' }
 }
 
 function toTarget(building) {
+  const floors = building.lines.map((line) => String(line.max_floor))
   return {
     id: building.id,
     name: building.name,
-    floors: building.lines.map((line) => String(line.max_floor)),
+    floors,
+    lineText: String(floors.length),
   }
 }
 
@@ -23,9 +28,24 @@ export default function BuildingEditModal({ buildings, onClose, onSubmit, saving
     setTarget(next)
   }
 
+  // 입력 중에는 빈 칸도 그대로 둔다. 매 글자마다 1로 되돌리면 iOS에서 지우는 순간
+  // 값이 되살아나 새 숫자를 못 넣는다. 정리는 포커스를 뗄 때 한다.
   function handleLineCountChange(value) {
-    const count = Math.max(1, parseInt(value, 10) || 1)
-    setTarget((t) => ({ ...t, floors: Array.from({ length: count }, (_, i) => t.floors[i] ?? '') }))
+    const digits = value.replace(/[^0-9]/g, '')
+    setTarget((t) => {
+      const count = parseInt(digits, 10)
+      if (!Number.isFinite(count) || count < 1) return { ...t, lineText: digits }
+      const next = Math.min(count, MAX_LINES)
+      return {
+        ...t,
+        lineText: next === count ? digits : String(next),
+        floors: Array.from({ length: next }, (_, i) => t.floors[i] ?? ''),
+      }
+    })
+  }
+
+  function handleLineCountBlur() {
+    setTarget((t) => ({ ...t, lineText: String(t.floors.length) }))
   }
 
   function handleSubmit() {
@@ -91,19 +111,30 @@ export default function BuildingEditModal({ buildings, onClose, onSubmit, saving
       />
 
       <label>세대수 (라인 수)</label>
-      <input type="number" min="1" value={target.floors.length} onChange={(e) => handleLineCountChange(e.target.value)} />
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={target.lineText}
+        onChange={(e) => handleLineCountChange(e.target.value)}
+        onBlur={handleLineCountBlur}
+      />
 
       <label>세대별 최대 층수</label>
       {target.floors.map((floor, index) => (
         <input
           key={index}
-          type="number"
-          min="1"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
           className="floor-input"
           placeholder={`${index + 1}세대 최대층`}
           value={floor}
           onChange={(e) =>
-            setTarget({ ...target, floors: target.floors.map((item, i) => (i === index ? e.target.value : item)) })
+            setTarget({
+              ...target,
+              floors: target.floors.map((item, i) => (i === index ? e.target.value.replace(/[^0-9]/g, '') : item)),
+            })
           }
         />
       ))}
