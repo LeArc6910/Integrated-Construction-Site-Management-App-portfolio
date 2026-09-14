@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchPaymentSiteList } from '../../api/payment'
+import { fetchCompletedPaymentSiteList } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatWon } from '../../lib/format'
 
-export default function PaymentSitesTab() {
+// 현장관리에서 세대가 전부 체크되어 "완료"로 뜨는 현장은 여기로 옮겨와 보인다.
+export default function PaymentCompletedSitesTab() {
   const navigate = useNavigate()
   const { year, month, setPeriod } = usePeriod()
   const [sites, setSites] = useState([])
   const [error, setError] = useState('')
 
-  const load = useCallback(() => fetchPaymentSiteList({ year, month }), [year, month])
+  const load = useCallback(() => fetchCompletedPaymentSiteList({ year, month }), [year, month])
 
   function handleCalChange({ year: y, month: m }) {
     setPeriod(y, m)
@@ -46,7 +47,7 @@ export default function PaymentSitesTab() {
         </div>
         {sites.length === 0 && (
           <div className="row">
-            <span className="text-secondary">등록된 현장이 없습니다.</span>
+            <span className="text-secondary">완료된 현장이 없습니다.</span>
           </div>
         )}
         {sites.map((site) => (

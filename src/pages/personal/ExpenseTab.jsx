@@ -12,6 +12,7 @@ import {
 import CalendarNav from '../../components/CalendarNav'
 import Modal from '../../components/Modal'
 import { useAuth } from '../../hooks/useAuth'
+import { usePeriod } from '../../hooks/usePeriod'
 import { enqueueWrite } from '../../lib/offlineQueue'
 
 const ROW_COLUMNS = '0.9fr 1fr 1.3fr 0.9fr 0.9fr'
@@ -33,9 +34,7 @@ const EMPTY_FORM = { date: todayStr(), place: '', content: '', amount: '', recei
 
 export default function ExpenseTab() {
   const { user } = useAuth()
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [expenses, setExpenses] = useState([])
   const [modalMode, setModalMode] = useState(null) // null | 'add' | expense 객체(수정 중)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -76,8 +75,7 @@ export default function ExpenseTab() {
   }, [reload])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   function openAdd() {

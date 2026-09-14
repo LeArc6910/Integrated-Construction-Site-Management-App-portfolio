@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchHrList, updateRate, updateRole } from '../../api/hr'
 import CalendarNav from '../../components/CalendarNav'
+import Modal from '../../components/Modal'
 import { ROLES } from '../../constants/roles'
 import { useAuth } from '../../hooks/useAuth'
+import { usePeriod } from '../../hooks/usePeriod'
 import { formatDays, formatWon } from '../../lib/format'
 
 const ROLE_OPTIONS = [ROLES.MEMBER, ROLES.LEADER, ROLES.DEVELOPER]
@@ -11,11 +13,12 @@ const ROLE_OPTIONS = [ROLES.MEMBER, ROLES.LEADER, ROLES.DEVELOPER]
 export default function HrListPage() {
   const { user } = useAuth()
   const isDev = user.role === ROLES.DEVELOPER
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
+  const [editingRate, setEditingRate] = useState(null)
+  const [rateForm, setRateForm] = useState({ rate: '', year, month })
+  const [savingRate, setSavingRate] = useState(false)
 
   const load = useCallback(() => fetchHrList({ year, month }), [year, month])
 
@@ -30,8 +33,7 @@ export default function HrListPage() {
   }, [load])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   async function reload() {
@@ -42,18 +44,26 @@ export default function HrListPage() {
     }
   }
 
-  async function handleEditRate(row) {
-    const input = window.prompt('단가를 입력하세요', row.rate)
-    if (input === null) return
-    const rate = parseInt(input, 10)
+  function openEditRate(row) {
+    setError('')
+    setRateForm({ rate: String(row.rate), year, month })
+    setEditingRate(row)
+  }
+
+  async function handleSaveRate() {
+    const rate = parseInt(rateForm.rate, 10)
     if (Number.isNaN(rate)) return
 
+    setSavingRate(true)
     setError('')
     try {
-      await updateRate({ userId: row.userId, rate })
+      await updateRate({ userId: editingRate.userId, rate, year: rateForm.year, month: rateForm.month })
+      setEditingRate(null)
       await reload()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setSavingRate(false)
     }
   }
 
@@ -100,7 +110,7 @@ export default function HrListPage() {
             <span className="mono">{formatWon(row.expenseTotal)}</span>
             <span className="mono">{formatWon(row.rate)}</span>
             <span className="hr-actions">
-              <button type="button" className="btn small" onClick={() => handleEditRate(row)}>
+              <button type="button" className="btn small" onClick={() => openEditRate(row)}>
                 단가수정
               </button>
               <select
@@ -119,6 +129,46 @@ export default function HrListPage() {
           </div>
         ))}
       </div>
+
+      {editingRate && (
+        <Modal title={`${editingRate.name} 단가 수정`} onClose={() => setEditingRate(null)}>
+          <p className="text-secondary">
+            선택한 연/월부터 이 단가가 적용됩니다. 과거 달 급여는 그 당시 단가로 그대로 남습니다.
+          </p>
+          <label>적용 연/월</label>
+          <div className="salary-form">
+            <input
+              type="number"
+              value={rateForm.year}
+              onChange={(e) => setRateForm({ ...rateForm, year: Number(e.target.value) })}
+              aria-label="적용 연도"
+            />
+            <input
+              type="number"
+              min="1"
+              max="12"
+              value={rateForm.month}
+              onChange={(e) => setRateForm({ ...rateForm, month: Number(e.target.value) })}
+              aria-label="적용 월"
+            />
+          </div>
+          <label>단가</label>
+          <input
+            type="number"
+            value={rateForm.rate}
+            onChange={(e) => setRateForm({ ...rateForm, rate: e.target.value })}
+            aria-label="단가"
+          />
+          <div className="modal-actions">
+            <button type="button" className="btn" onClick={() => setEditingRate(null)}>
+              취소
+            </button>
+            <button type="button" className="btn primary" disabled={savingRate} onClick={handleSaveRate}>
+              저장
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

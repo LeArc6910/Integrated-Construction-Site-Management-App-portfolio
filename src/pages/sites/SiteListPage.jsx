@@ -13,8 +13,16 @@ export default function SiteListPage() {
   const [newName, setNewName] = useState('')
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const [query, setQuery] = useState('')
 
   const canDelete = MANAGER_ROLES.includes(user.role)
+
+  function handleSearch() {
+    setQuery(searchInput.trim())
+  }
+
+  const filteredSites = query ? sites.filter((site) => site.name.includes(query)) : sites
 
   const load = useCallback(() => fetchSiteList({ userId: user.id }), [user.id])
 
@@ -81,7 +89,21 @@ export default function SiteListPage() {
 
   return (
     <div>
-      <h2 className="page-title">현장 관리</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">현장 관리</h2>
+        <div className="site-search">
+          <input
+            type="text"
+            placeholder="현장명 검색"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+          <button type="button" className="btn small" onClick={handleSearch}>
+            검색
+          </button>
+        </div>
+      </div>
 
       {error && (
         <p className="auth-message error" role="alert">
@@ -91,7 +113,10 @@ export default function SiteListPage() {
 
       <div className="site-list-grid">
         {sites.length === 0 && <p className="text-secondary">등록된 현장이 없습니다.</p>}
-        {sites.map((site) => (
+        {sites.length > 0 && filteredSites.length === 0 && (
+          <p className="text-secondary">검색 결과가 없습니다.</p>
+        )}
+        {filteredSites.map((site) => (
           <div key={site.id} className="site-card">
             <div className="site-card-top">
               <label className="fav">
@@ -109,6 +134,7 @@ export default function SiteListPage() {
             <div className="site-card-stats">
               <span>
                 {site.completed} / {site.total} 세대 완료
+                {site.total > 0 && ` (${Math.round((site.completed / site.total) * 100)}%)`}
               </span>
               <span>미타공 {site.defectCount}건</span>
             </div>

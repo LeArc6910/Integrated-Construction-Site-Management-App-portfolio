@@ -56,7 +56,7 @@ export default function CellPanel({
   onResolveDefect,
   onDeleteDefect,
 }) {
-  const title = `${panel.buildingName} ${panel.lineNo}세대 ${panel.floor}층${
+  const title = `${panel.buildingName} ${panel.lineNo}호${panel.unitType ? `(${panel.unitType})` : ''} ${panel.floor}층${
     sheetView === 'plaster' ? ' · 석고 시공' : panel.kind === 'defect' ? ' · 미타공' : ''
   }`
   const unresolved = defects.filter((defect) => !defect.resolved)

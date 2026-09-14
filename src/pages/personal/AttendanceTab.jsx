@@ -7,13 +7,12 @@ import CalendarNav from '../../components/CalendarNav'
 import Modal from '../../components/Modal'
 import { MANAGER_ROLES } from '../../constants/roles'
 import { useAuth } from '../../hooks/useAuth'
+import { usePeriod } from '../../hooks/usePeriod'
 import { enqueueWrite } from '../../lib/offlineQueue'
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토']
-const HOURS_OPTIONS = [
-  { value: 1, label: '1일' },
-  { value: 0.5, label: '0.5일' },
-]
+const HALF_LABELS = { FULL: '하루 종일', AM: '오전', PM: '오후' }
+const ALL_HALVES = ['FULL', 'AM', 'PM']
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -31,17 +30,22 @@ function buildCells(year, month) {
   return cells
 }
 
+// 하루 종일 하나만 있거나, 오전/오후가 각각 최대 하나씩 있을 수 있다. 이미 하루 종일이
+// 있으면 더 추가할 수 없고, 오전/오후 중 하나가 있으면 남은 반쪽만 추가할 수 있다.
+function availableHalves(records) {
+  const used = records.map((r) => r.half)
+  if (used.includes('FULL')) return []
+  return ALL_HALVES.filter((h) => h !== 'FULL' ? !used.includes(h) : records.length === 0)
+}
+
 export default function AttendanceTab() {
   const { user } = useAuth()
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [sites, setSites] = useState([])
   const [attendance, setAttendance] = useState({})
-  const [selectedDate, setSelectedDate] = useState(null)
-  const [editingDate, setEditingDate] = useState(null)
-  const [siteId, setSiteId] = useState('')
-  const [hours, setHours] = useState(1)
+  const [activeDate, setActiveDate] = useState(null)
+  const [newHalf, setNewHalf] = useState('FULL')
+  const [newSiteId, setNewSiteId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [upcomingByDate, setUpcomingByDate] = useState({})
@@ -52,7 +56,7 @@ export default function AttendanceTab() {
     fetchSites()
       .then((rows) => {
         setSites(rows)
-        setSiteId((prev) => prev || rows[0]?.id || '')
+        setNewSiteId((prev) => prev || rows[0]?.id || '')
       })
       .catch((err) => setError(err.message))
   }, [])
@@ -101,67 +105,69 @@ export default function AttendanceTab() {
   }, [canSeeUpcoming, year, month])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
-    setSelectedDate(null)
+    setPeriod(y, m)
+    setActiveDate(null)
   }
 
   function handleCellClick(dateStr) {
-    if (attendance[dateStr]) {
-      const rec = attendance[dateStr]
-      if (rec.pending) return // 아직 서버로 전송되지 않은 기록은 동기화 전까지 수정할 수 없다
-      setEditingDate(dateStr)
-      setSiteId(rec.siteId)
-      setHours(rec.hours)
-    } else {
-      setSelectedDate(dateStr)
-    }
+    const options = availableHalves(attendance[dateStr] ?? [])
+    setNewHalf(options[0] ?? 'FULL')
+    setActiveDate(dateStr)
   }
 
-  async function handleCheckIn() {
+  async function handleAddRecord() {
     setError('')
     setNotice('')
     const clientId = crypto.randomUUID()
 
     if (!navigator.onLine) {
       try {
-        await enqueueWrite('attendance', { userId: user.id, date: selectedDate, siteId, hours, clientId })
+        await enqueueWrite('attendance', { userId: user.id, date: activeDate, siteId: newSiteId, half: newHalf, clientId })
       } catch (err) {
         setError(err.message)
         return
       }
-      const siteName = sites.find((s) => s.id === siteId)?.name ?? ''
-      setAttendance((prev) => ({ ...prev, [selectedDate]: { id: clientId, siteId, siteName, hours, pending: true } }))
-      setSelectedDate(null)
+      const siteName = sites.find((s) => s.id === newSiteId)?.name ?? ''
+      const hours = newHalf === 'FULL' ? 1 : 0.5
+      setAttendance((prev) => ({
+        ...prev,
+        [activeDate]: [
+          ...(prev[activeDate] ?? []),
+          { id: clientId, siteId: newSiteId, siteName, hours, half: newHalf, pending: true },
+        ],
+      }))
       setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      const remaining = availableHalves([...(attendance[activeDate] ?? []), { half: newHalf }])
+      if (remaining.length === 0) setActiveDate(null)
+      else setNewHalf(remaining[0])
       return
     }
 
     try {
-      await checkIn({ userId: user.id, date: selectedDate, siteId, hours, clientId })
-      setSelectedDate(null)
+      await checkIn({ userId: user.id, date: activeDate, siteId: newSiteId, half: newHalf, clientId })
+      await reload()
+      const remaining = availableHalves([...(attendance[activeDate] ?? []), { half: newHalf }])
+      if (remaining.length === 0) setActiveDate(null)
+      else setNewHalf(remaining[0])
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function handleChangeSite(record, siteId) {
+    setError('')
+    try {
+      await updateAttendance({ id: record.id, siteId })
       await reload()
     } catch (err) {
       setError(err.message)
     }
   }
 
-  async function handleSaveEdit() {
+  async function handleDelete(record) {
     setError('')
     try {
-      await updateAttendance({ id: attendance[editingDate].id, siteId, hours })
-      setEditingDate(null)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
-  async function handleCancelAttendance() {
-    setError('')
-    try {
-      await cancelAttendance({ id: attendance[editingDate].id })
-      setEditingDate(null)
+      await cancelAttendance({ id: record.id })
       await reload()
     } catch (err) {
       setError(err.message)
@@ -169,6 +175,8 @@ export default function AttendanceTab() {
   }
 
   const cells = buildCells(year, month)
+  const activeRecords = activeDate ? attendance[activeDate] ?? [] : []
+  const addableHalves = availableHalves(activeRecords)
 
   return (
     <div>
@@ -191,23 +199,26 @@ export default function AttendanceTab() {
           if (day === null) return <div key={`empty-${i}`} className="cal-cell empty" />
 
           const dateStr = ymd(year, month, day)
-          const rec = attendance[dateStr]
+          const records = attendance[dateStr] ?? []
+          const totalHours = records.reduce((sum, r) => sum + r.hours, 0)
           const upcomingNames = canSeeUpcoming ? (upcomingByDate[dateStr] ?? []) : []
           const cls = ['cal-cell']
-          if (rec) cls.push(rec.hours === 1 ? 'cal-full' : 'cal-half')
-          if (selectedDate === dateStr) cls.push('cal-selected')
+          if (totalHours >= 1) cls.push('cal-full')
+          else if (totalHours > 0) cls.push('cal-half')
+          if (activeDate === dateStr) cls.push('cal-selected')
           if (upcomingNames.length > 0) cls.push('cal-upcoming')
 
           return (
             <div key={dateStr} className={cls.join(' ')} onClick={() => handleCellClick(dateStr)}>
               {day}
               {upcomingNames.length > 0 && <IconCalendarEvent size={11} className="cal-upcoming-icon" />}
-              {rec && (
-                <span className="cal-site">
+              {records.map((rec) => (
+                <span key={rec.id} className="cal-site">
+                  {rec.half !== 'FULL' && `${HALF_LABELS[rec.half]} · `}
                   {rec.siteName}
                   {rec.pending && <span className="cal-pending"> (대기중)</span>}
                 </span>
-              )}
+              ))}
               {upcomingNames.map((name, nameIndex) => (
                 <span key={`${name}-${nameIndex}`} className="cal-upcoming-site">
                   {name} 방문 예정
@@ -218,53 +229,58 @@ export default function AttendanceTab() {
         })}
       </div>
 
-      <div className="attendance-controls">
-        <span>
-          선택된 날짜: <b>{selectedDate ?? '(날짜를 선택하세요)'}</b>
-        </span>
-        <select value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
+      {activeDate && (
+        <Modal title={`${activeDate} 출근 정보`} onClose={() => setActiveDate(null)}>
+          {activeRecords.map((rec) => (
+            <div key={rec.id} className="attendance-record-row">
+              <span className="attendance-record-half">{HALF_LABELS[rec.half]}</span>
+              <select
+                value={rec.siteId}
+                disabled={rec.pending}
+                onChange={(e) => handleChangeSite(rec, e.target.value)}
+              >
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn small danger" disabled={rec.pending} onClick={() => handleDelete(rec)}>
+                삭제
+              </button>
+            </div>
           ))}
-        </select>
-        <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-          {HOURS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="btn primary" disabled={!selectedDate || !siteId} onClick={handleCheckIn}>
-          출근
-        </button>
-      </div>
 
-      {editingDate && (
-        <Modal title={`${editingDate} 출근 정보 수정`} onClose={() => setEditingDate(null)}>
-          <label>현장</label>
-          <select value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <label>근무시간</label>
-          <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-            {HOURS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          {addableHalves.length > 0 ? (
+            <>
+              <label>추가</label>
+              <div className="attendance-record-row">
+                <select value={newHalf} onChange={(e) => setNewHalf(e.target.value)}>
+                  {addableHalves.map((h) => (
+                    <option key={h} value={h}>
+                      {HALF_LABELS[h]}
+                    </option>
+                  ))}
+                </select>
+                <select value={newSiteId} onChange={(e) => setNewSiteId(e.target.value)}>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn primary small" disabled={!newSiteId} onClick={handleAddRecord}>
+                  추가
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-secondary">더 추가할 수 없습니다.</p>
+          )}
+
           <div className="modal-actions">
-            <button type="button" className="btn danger" onClick={handleCancelAttendance}>
-              출근 취소
-            </button>
-            <button type="button" className="btn primary" onClick={handleSaveEdit}>
-              수정
+            <button type="button" className="btn" onClick={() => setActiveDate(null)}>
+              닫기
             </button>
           </div>
         </Modal>

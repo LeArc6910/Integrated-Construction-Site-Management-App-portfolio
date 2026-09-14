@@ -4,6 +4,7 @@ import { fetchMonthExpenses } from '../../api/expense'
 import { fetchActualSalary } from '../../api/salary'
 import CalendarNav from '../../components/CalendarNav'
 import { useAuth } from '../../hooks/useAuth'
+import { usePeriod } from '../../hooks/usePeriod'
 
 function won(amount) {
   return `₩${amount.toLocaleString()}`
@@ -11,9 +12,7 @@ function won(amount) {
 
 export default function DashboardTab() {
   const { user } = useAuth()
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [attendance, setAttendance] = useState({})
   const [expenseTotal, setExpenseTotal] = useState(0)
   const [salary, setSalary] = useState(null)
@@ -48,11 +47,10 @@ export default function DashboardTab() {
   }, [load])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
-  const records = Object.values(attendance)
+  const records = Object.values(attendance).flat()
   const totalDays = records.reduce((sum, r) => sum + r.hours, 0)
   const bySite = {}
   records.forEach((r) => {

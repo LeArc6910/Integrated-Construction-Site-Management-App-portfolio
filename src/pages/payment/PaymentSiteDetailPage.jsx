@@ -11,13 +11,13 @@ import {
 } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import Modal from '../../components/Modal'
+import { usePeriod } from '../../hooks/usePeriod'
 import { formatDays, formatWon } from '../../lib/format'
 
 export default function PaymentSiteDetailPage() {
   const { siteId } = useParams()
+  const { year, month, setPeriod } = usePeriod()
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -59,8 +59,7 @@ export default function PaymentSiteDetailPage() {
   }
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   function openContractModal() {

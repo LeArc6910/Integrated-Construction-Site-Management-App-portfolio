@@ -3,17 +3,20 @@ import { Link, useParams } from 'react-router-dom'
 import {
   addDefect,
   addUnitLog,
+  addUnitLogs,
   cellKey,
   checkKey,
   clearUnitCheck,
   createBuilding,
   defectSummary,
+  deleteBuilding,
   deleteDefect,
   fetchCellLogs,
   fetchUserNames,
   loadSiteSheet,
+  reorderBuildings,
   resolveDefect,
-  setUnitCheck,
+  setUnitChecks,
   updateBuilding,
 } from '../../api/unitSheet'
 import { saveSheetSharing } from '../../api/sheetSharing'
@@ -21,6 +24,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { enqueueWrite } from '../../lib/offlineQueue'
 import BuildingEditModal from './BuildingEditModal'
 import CellPanel from './CellPanel'
+import ChecklistPanel from './ChecklistPanel'
 import DefectAddModal from './DefectAddModal'
 import SheetShareModal from './SheetShareModal'
 import UnitSheetTable from './UnitSheetTable'
@@ -55,8 +59,10 @@ export default function SiteDetailPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const [view, setView] = useState('sheet') // 'sheet' | 'checklist'
   const [buildingFilter, setBuildingFilter] = useState(ALL_BUILDINGS)
   const [scale, setScale] = useState(1)
+  const [horizontal, setHorizontal] = useState(false)
   const [sheetView, setSheetView] = useState('main') // 'main' | 'plaster'
   const [bar, setBar] = useState('default') // 'default' | 'work' | 'defect'
   const [workSub, setWorkSub] = useState(null) // 'light' | 'laminate'
@@ -143,17 +149,14 @@ export default function SiteDetailPage() {
   }
 
   async function openPanel(building, lineNo, floor, kind) {
-    const target = { buildingId: building.id, buildingName: building.name, lineNo, floor, kind }
+    const unitType = building.lines.find((line) => line.line_no === lineNo)?.unit_type ?? null
+    const target = { buildingId: building.id, buildingName: building.name, lineNo, floor, unitType, kind }
     setPanel(target)
     setSelectedDefectId(null)
     await refreshLogs(target)
   }
 
   async function handleCellClick(building, lineNo, floor) {
-    if (bar === 'work' && workSub) {
-      await toggleCheck(building, lineNo, floor, workSub)
-      return
-    }
     if (sheetView === 'main' && bar === 'defect') {
       await openPanel(building, lineNo, floor, 'defect')
       return
@@ -161,21 +164,27 @@ export default function SiteDetailPage() {
     await openPanel(building, lineNo, floor, 'info')
   }
 
-  async function toggleCheck(building, lineNo, floor, field) {
+  // 드래그로 고른 칸들(cells[0]은 처음 누른 칸)을 한 번에 칠하거나 지운다. 한 칸만 탭한
+  // 경우도 칸이 하나인 드래그로 들어와서 같은 경로를 탄다.
+  async function handleCellsCheck(building, cells) {
+    if (!workSub || cells.length === 0) return
     setError('')
     setNotice('')
-    const key = checkKey(building.id, lineNo, floor, sheetView)
-    const next = !sheet.checks[key]?.[field]
+
+    const field = workSub
+    // 체크할지 해제할지는 처음 누른 칸의 상태로 정한다. 드래그 구간에 체크된 칸과 안 된
+    // 칸이 섞여 있어도 한 방향으로만 칠해져서 결과를 예측할 수 있다.
+    const anchorKey = checkKey(building.id, cells[0].lineNo, cells[0].floor, sheetView)
+    const next = !sheet.checks[anchorKey]?.[field]
     const action = `${field === 'light' ? '경량' : '합지'} 체크${next ? '' : ' 해제'}`
     const detail = sheetView === 'plaster' ? '석고 시공' : null
+    const targets = cells.map((cell) => ({ buildingId: building.id, lineNo: cell.lineNo, floor: cell.floor }))
 
     if (!navigator.onLine) {
       try {
         await enqueueWrite('unitCheck', {
           mode: 'set',
-          buildingId: building.id,
-          lineNo,
-          floor,
+          cells: targets,
           sheet: sheetView,
           field,
           value: next,
@@ -189,29 +198,33 @@ export default function SiteDetailPage() {
         return
       }
       const now = new Date().toISOString()
-      const row = {
-        ...sheet.checks[key],
-        [field]: next,
-        [`${field}_by`]: next ? user.id : null,
-        [`${field}_at`]: next ? now : null,
-      }
-      setSheet((prev) => ({ ...prev, checks: { ...prev.checks, [key]: row } }))
+      setSheet((prev) => {
+        const checks = { ...prev.checks }
+        targets.forEach((cell) => {
+          const key = checkKey(cell.buildingId, cell.lineNo, cell.floor, sheetView)
+          checks[key] = {
+            ...checks[key],
+            [field]: next,
+            [`${field}_by`]: next ? user.id : null,
+            [`${field}_at`]: next ? now : null,
+          }
+        })
+        return { ...prev, checks }
+      })
       setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
       return
     }
 
     try {
-      const row = await setUnitCheck({
-        buildingId: building.id,
-        lineNo,
-        floor,
-        sheet: sheetView,
-        field,
-        value: next,
-        userId: user.id,
+      const rows = await setUnitChecks({ cells: targets, sheet: sheetView, field, value: next, userId: user.id })
+      setSheet((prev) => {
+        const checks = { ...prev.checks }
+        rows.forEach((row) => {
+          checks[checkKey(row.building_id, row.line_no, row.floor, row.sheet)] = row
+        })
+        return { ...prev, checks }
       })
-      setSheet((prev) => ({ ...prev, checks: { ...prev.checks, [key]: row } }))
-      await addUnitLog({ buildingId: building.id, lineNo, floor, sheet: sheetView, action, detail, userId: user.id })
+      await addUnitLogs({ cells: targets, sheet: sheetView, action, detail, userId: user.id })
     } catch (err) {
       setError(err.message)
     }
@@ -264,41 +277,45 @@ export default function SiteDetailPage() {
     }
   }
 
+  // 위치를 여러 개 고른 등록은 하나로 묶지 않고, 위치마다 별도의 미타공 건으로 나눠 등록한다.
   async function handleAddDefect({ locations, content }) {
     setSaving(true)
     setError('')
     setNotice('')
 
     if (!navigator.onLine) {
-      const clientId = crypto.randomUUID()
+      const key = cellKey(panel.buildingId, panel.lineNo, panel.floor)
+      const pendingDefects = []
       try {
-        await enqueueWrite('defectAdd', {
-          buildingId: panel.buildingId,
-          lineNo: panel.lineNo,
-          floor: panel.floor,
-          locations,
-          content,
-          userId: user.id,
-          clientId,
-        })
+        for (const location of locations) {
+          const clientId = crypto.randomUUID()
+          await enqueueWrite('defectAdd', {
+            buildingId: panel.buildingId,
+            lineNo: panel.lineNo,
+            floor: panel.floor,
+            locations: [location],
+            content,
+            userId: user.id,
+            clientId,
+          })
+          pendingDefects.push({
+            id: clientId,
+            locations: [location],
+            content,
+            created_by: user.id,
+            created_at: new Date().toISOString(),
+            resolved: false,
+            pending: true,
+          })
+        }
       } catch (err) {
         setError(err.message)
         setSaving(false)
         return
       }
-      const key = cellKey(panel.buildingId, panel.lineNo, panel.floor)
-      const pendingDefect = {
-        id: clientId,
-        locations,
-        content,
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-        resolved: false,
-        pending: true,
-      }
       setSheet((prev) => ({
         ...prev,
-        defects: { ...prev.defects, [key]: [...(prev.defects[key] ?? []), pendingDefect] },
+        defects: { ...prev.defects, [key]: [...(prev.defects[key] ?? []), ...pendingDefects] },
       }))
       setDefectModal(false)
       setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
@@ -307,16 +324,26 @@ export default function SiteDetailPage() {
     }
 
     try {
-      const defect = await addDefect({ ...panel, locations, content, userId: user.id, clientId: crypto.randomUUID() })
-      await addUnitLog({
-        ...panel,
-        sheet: 'main',
-        action: '미타공 등록',
-        detail: defectSummary(defect),
-        userId: user.id,
-      })
+      let lastDefect = null
+      for (const location of locations) {
+        const defect = await addDefect({
+          ...panel,
+          locations: [location],
+          content,
+          userId: user.id,
+          clientId: crypto.randomUUID(),
+        })
+        await addUnitLog({
+          ...panel,
+          sheet: 'main',
+          action: '미타공 등록',
+          detail: defectSummary(defect),
+          userId: user.id,
+        })
+        lastDefect = defect
+      }
       setDefectModal(false)
-      setSelectedDefectId(defect.id)
+      if (lastDefect) setSelectedDefectId(lastDefect.id)
       await reload()
       await refreshLogs()
     } catch (err) {
@@ -429,18 +456,46 @@ export default function SiteDetailPage() {
     }
   }
 
-  async function handleSaveBuilding({ id, name, maxFloors }) {
+  async function handleSaveBuilding({ id, name, lines }) {
     setSaving(true)
     setError('')
     try {
       if (id) {
-        await updateBuilding({ buildingId: id, name, maxFloors })
+        await updateBuilding({ buildingId: id, name, lines })
       } else {
         // 공유 중인 세대표에 동을 추가하면 원본 현장에 달려야 같이 보인다
-        await createBuilding({ siteId: sheetOwner, name, maxFloors })
+        await createBuilding({ siteId: sheetOwner, name, lines })
       }
       setBuildingModal(false)
       setBuildingFilter(name)
+      await reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteBuilding(buildingId) {
+    setSaving(true)
+    setError('')
+    try {
+      await deleteBuilding({ buildingId })
+      setBuildingModal(false)
+      setBuildingFilter(ALL_BUILDINGS)
+      await reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReorderBuildings(orderedIds) {
+    setSaving(true)
+    setError('')
+    try {
+      await reorderBuildings({ orderedIds })
       await reload()
     } catch (err) {
       setError(err.message)
@@ -479,6 +534,23 @@ export default function SiteDetailPage() {
       </Link>
       <h2 className="page-title">{sheet.site?.name ?? ''}</h2>
 
+      <div className="site-view-tabs">
+        <button
+          type="button"
+          className={`btn${view === 'sheet' ? ' primary' : ''}`}
+          onClick={() => setView('sheet')}
+        >
+          세대표
+        </button>
+        <button
+          type="button"
+          className={`btn${view === 'checklist' ? ' primary' : ''}`}
+          onClick={() => setView('checklist')}
+        >
+          체크리스트
+        </button>
+      </div>
+
       {sheet.offline && (
         <p className="offline-banner">오프라인 · 마지막 업데이트 {formatCachedTime(sheet.cachedAt)}</p>
       )}
@@ -496,6 +568,10 @@ export default function SiteDetailPage() {
       )}
       {notice && <p className="auth-message notice">{notice}</p>}
 
+      {view === 'checklist' ? (
+        <ChecklistPanel siteId={sheetOwner} userId={user.id} names={names} />
+      ) : (
+        <>
       <div className="toolbar">
         <select value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
           <option value={ALL_BUILDINGS}>{ALL_BUILDINGS}</option>
@@ -506,6 +582,9 @@ export default function SiteDetailPage() {
           ))}
         </select>
         <div className="zoom-controls">
+          <button type="button" className="btn small" onClick={() => setHorizontal((h) => !h)}>
+            {horizontal ? '세로 보기' : '가로 보기'}
+          </button>
           <button type="button" className="btn small" onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}>
             －
           </button>
@@ -523,8 +602,11 @@ export default function SiteDetailPage() {
         defects={sheet.defects}
         sheetView={sheetView}
         defectMode={bar === 'defect'}
+        dragMode={bar === 'work' && workSub !== null}
         scale={scale}
+        horizontal={horizontal}
         onCellClick={handleCellClick}
+        onCellsCheck={handleCellsCheck}
       />
 
       <div className="mode-bar">
@@ -547,6 +629,7 @@ export default function SiteDetailPage() {
             <button type="button" className="btn danger" onClick={cancelMode}>
               취소
             </button>
+            {workSub && <span className="mode-hint">칸을 끌면 여러 칸이 한 번에 체크됩니다</span>}
           </>
         ) : bar === 'defect' ? (
           <button type="button" className="btn danger" onClick={cancelMode}>
@@ -606,6 +689,8 @@ export default function SiteDetailPage() {
           onDeleteDefect={handleDeleteDefect}
         />
       )}
+        </>
+      )}
 
       {defectModal && (
         <DefectAddModal saving={saving} onClose={() => setDefectModal(false)} onSubmit={handleAddDefect} />
@@ -616,6 +701,8 @@ export default function SiteDetailPage() {
           saving={saving}
           onClose={() => setBuildingModal(false)}
           onSubmit={handleSaveBuilding}
+          onDelete={handleDeleteBuilding}
+          onReorder={handleReorderBuildings}
         />
       )}
       {shareModal && (

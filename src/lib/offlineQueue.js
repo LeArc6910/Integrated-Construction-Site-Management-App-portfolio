@@ -1,6 +1,6 @@
 import { checkIn } from '../api/attendance'
 import { addExpense, uploadReceipt } from '../api/expense'
-import { addDefect, addUnitLog, clearUnitCheck, defectSummary, deleteDefect, resolveDefect, setUnitCheck } from '../api/unitSheet'
+import { addDefect, addUnitLog, addUnitLogs, clearUnitCheck, defectSummary, deleteDefect, resolveDefect, setUnitChecks } from '../api/unitSheet'
 import { idbDelete, idbGetAll, idbPut, STORES } from './idb'
 
 // 큐에 쌓인 기록을 실제로 Supabase에 저장하는 방법. attendance/expense/defect API는
@@ -17,21 +17,28 @@ const HANDLERS = {
   unitCheck: async (payload) => {
     if (payload.mode === 'clear') {
       await clearUnitCheck({ buildingId: payload.buildingId, lineNo: payload.lineNo, floor: payload.floor, sheet: payload.sheet })
-    } else {
-      await setUnitCheck({
+      await addUnitLog({
         buildingId: payload.buildingId,
         lineNo: payload.lineNo,
         floor: payload.floor,
         sheet: payload.sheet,
-        field: payload.field,
-        value: payload.value,
+        action: payload.action,
+        detail: payload.detail,
         userId: payload.userId,
       })
+      return
     }
-    await addUnitLog({
-      buildingId: payload.buildingId,
-      lineNo: payload.lineNo,
-      floor: payload.floor,
+    // 이전 버전에서 쌓인 항목은 cells 없이 칸 하나만 담고 있다
+    const cells = payload.cells ?? [{ buildingId: payload.buildingId, lineNo: payload.lineNo, floor: payload.floor }]
+    await setUnitChecks({
+      cells,
+      sheet: payload.sheet,
+      field: payload.field,
+      value: payload.value,
+      userId: payload.userId,
+    })
+    await addUnitLogs({
+      cells,
       sheet: payload.sheet,
       action: payload.action,
       detail: payload.detail,

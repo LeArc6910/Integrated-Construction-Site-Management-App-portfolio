@@ -5,6 +5,7 @@ import { fetchMonthAttendance } from '../../api/attendance'
 import { fetchMonthExpenses, getReceiptUrl } from '../../api/expense'
 import { fetchHrProfile } from '../../api/hr'
 import CalendarNav from '../../components/CalendarNav'
+import { usePeriod } from '../../hooks/usePeriod'
 import { buildCells, DOW, ymd } from '../../lib/calendar'
 import { formatWon } from '../../lib/format'
 
@@ -12,9 +13,7 @@ const EXPENSE_COLUMNS = '0.9fr 1fr 1.3fr 0.9fr 0.9fr'
 
 export default function HrDetailPage() {
   const { userId } = useParams()
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [profile, setProfile] = useState(null)
   const [attendance, setAttendance] = useState({})
   const [expenses, setExpenses] = useState([])
@@ -54,8 +53,7 @@ export default function HrDetailPage() {
   }, [loadMonth])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   async function handleViewReceipt(path) {
@@ -97,14 +95,20 @@ export default function HrDetailPage() {
           if (day === null) return <div key={`empty-${i}`} className="cal-cell empty" />
 
           const dateStr = ymd(year, month, day)
-          const rec = attendance[dateStr]
+          const records = attendance[dateStr] ?? []
+          const totalHours = records.reduce((sum, r) => sum + r.hours, 0)
           const cls = ['cal-cell']
-          if (rec) cls.push(rec.hours === 1 ? 'cal-full' : 'cal-half')
+          if (totalHours >= 1) cls.push('cal-full')
+          else if (totalHours > 0) cls.push('cal-half')
 
           return (
             <div key={dateStr} className={cls.join(' ')}>
               {day}
-              {rec && <span className="cal-site">{rec.siteName}</span>}
+              {records.map((rec) => (
+                <span key={rec.id} className="cal-site">
+                  {rec.siteName}
+                </span>
+              ))}
             </div>
           )
         })}
