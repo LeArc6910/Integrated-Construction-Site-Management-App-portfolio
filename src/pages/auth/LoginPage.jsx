@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
-import { getAuthErrorMessage, signIn } from '../../api/auth'
+import { getAuthErrorMessage, resendConfirmationEmail, signIn } from '../../api/auth'
 import { useAuth } from '../../hooks/useAuth'
 import { getAutoLogin, setAutoLogin } from '../../lib/supabase'
 
@@ -11,7 +11,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [autoLogin, setAutoLoginChecked] = useState(getAutoLogin)
   const [error, setError] = useState('')
+  const [errorCode, setErrorCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [resendState, setResendState] = useState('idle') // idle | sending | sent
 
   // 로그인 성공 시 onAuthStateChange로 세션이 들어오면서 여기서 원래 가려던 페이지로 이동한다
   if (session) return <Navigate to={location.state?.from ?? '/'} replace />
@@ -19,13 +21,28 @@ export default function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    setErrorCode('')
+    setResendState('idle')
     setSubmitting(true)
     try {
       setAutoLogin(autoLogin)
       await signIn({ email: email.trim(), password })
     } catch (err) {
       setError(getAuthErrorMessage(err))
+      setErrorCode(err.code)
       setSubmitting(false)
+    }
+  }
+
+  async function handleResend() {
+    setResendState('sending')
+    setError('')
+    try {
+      await resendConfirmationEmail({ email: email.trim() })
+      setResendState('sent')
+    } catch (err) {
+      setError(getAuthErrorMessage(err))
+      setResendState('idle')
     }
   }
 
@@ -63,6 +80,16 @@ export default function LoginPage() {
           <p className="auth-message error" role="alert">
             {error}
           </p>
+        )}
+
+        {errorCode === 'email_not_confirmed' && (
+          <button type="button" className="btn block" disabled={resendState !== 'idle'} onClick={handleResend}>
+            {resendState === 'sent'
+              ? '인증 메일을 다시 보냈습니다'
+              : resendState === 'sending'
+                ? '보내는 중…'
+                : '인증 메일 재발송'}
+          </button>
         )}
 
         <button type="submit" className="btn primary block" disabled={submitting}>

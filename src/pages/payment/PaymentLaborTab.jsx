@@ -2,13 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchLaborList } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
+import { usePeriod } from '../../hooks/usePeriod'
 import { formatWon } from '../../lib/format'
 
 export default function PaymentLaborTab() {
   const navigate = useNavigate()
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const { year, month, setPeriod } = usePeriod()
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
 
@@ -25,8 +24,7 @@ export default function PaymentLaborTab() {
   }, [load])
 
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   return (

@@ -12,7 +12,9 @@ import SiteListPage from './pages/sites/SiteListPage'
 import SiteDetailPage from './pages/sites/SiteDetailPage'
 import PaymentPage from './pages/payment/PaymentPage'
 import PaymentSitesTab from './pages/payment/PaymentSitesTab'
+import PaymentCompletedSitesTab from './pages/payment/PaymentCompletedSitesTab'
 import PaymentLaborTab from './pages/payment/PaymentLaborTab'
+import PaymentStatsTab from './pages/payment/PaymentStatsTab'
 import PaymentSiteDetailPage from './pages/payment/PaymentSiteDetailPage'
 import PaymentLaborDetailPage from './pages/payment/PaymentLaborDetailPage'
 import HrListPage from './pages/hr/HrListPage'
@@ -58,7 +60,9 @@ export const router = createBrowserRouter([
                 children: [
                   { index: true, element: <Navigate to="sites" replace /> },
                   { path: 'sites', element: <PaymentSitesTab /> },
+                  { path: 'completed-sites', element: <PaymentCompletedSitesTab /> },
                   { path: 'labor', element: <PaymentLaborTab /> },
+                  { path: 'stats', element: <PaymentStatsTab /> },
                 ],
               },
               { path: 'payment/sites/:siteId', element: <PaymentSiteDetailPage /> },

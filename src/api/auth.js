@@ -25,6 +25,12 @@ export async function signUp({ name, email, password }) {
   return data
 }
 
+// 가입 직후 인증 메일을 못 받았거나 유효시간이 지났을 때 다시 보낸다.
+export async function resendConfirmationEmail({ email }) {
+  const { error } = await supabase.auth.resend({ type: 'signup', email })
+  if (error) throw error
+}
+
 export async function signOut() {
   const { error } = await supabase.auth.signOut()
   // 네트워크 오류 등으로 서버 로그아웃이 실패해도 기기에서는 반드시 로그아웃되게 한다

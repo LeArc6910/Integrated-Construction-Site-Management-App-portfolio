@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchMonthAttendance } from '../../api/attendance'
-import { deleteActualSalary, fetchLaborDetail, saveActualSalary } from '../../api/payment'
+import { fetchMonthExpenses } from '../../api/expense'
+import {
+  afterWithholding,
+  deleteActualSalary,
+  fetchLaborDetail,
+  rateForMonth,
+  saveActualSalary,
+} from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
+import { usePeriod } from '../../hooks/usePeriod'
 import { buildCells, DOW, ymd } from '../../lib/calendar'
 import { formatDays, formatWon } from '../../lib/format'
 
 export default function PaymentLaborDetailPage() {
   const { userId } = useParams()
+  const { year, month, setPeriod } = usePeriod()
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
   const [detail, setDetail] = useState(null)
   const [attendance, setAttendance] = useState({})
+  const [monthExpenses, setMonthExpenses] = useState([])
   const [form, setForm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1, amount: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -20,6 +28,10 @@ export default function PaymentLaborDetailPage() {
   const loadDetail = useCallback(() => fetchLaborDetail({ userId }), [userId])
   const loadMonth = useCallback(
     () => fetchMonthAttendance({ userId, year, month }),
+    [userId, year, month]
+  )
+  const loadExpenses = useCallback(
+    () => fetchMonthExpenses({ userId, year, month }),
     [userId, year, month]
   )
 
@@ -43,9 +55,18 @@ export default function PaymentLaborDetailPage() {
     }
   }, [loadMonth])
 
+  useEffect(() => {
+    let ignore = false
+    loadExpenses()
+      .then((rows) => !ignore && setMonthExpenses(rows))
+      .catch((err) => !ignore && setError(err.message))
+    return () => {
+      ignore = true
+    }
+  }, [loadExpenses])
+
   function handleCalChange({ year: y, month: m }) {
-    setYear(y)
-    setMonth(m)
+    setPeriod(y, m)
   }
 
   async function handleSaveSalary() {
@@ -78,7 +99,14 @@ export default function PaymentLaborDetailPage() {
   }
 
   const cells = buildCells(year, month)
-  const monthDays = Object.values(attendance).reduce((sum, rec) => sum + rec.hours, 0)
+  const monthDays = Object.values(attendance)
+    .flat()
+    .reduce((sum, rec) => sum + rec.hours, 0)
+  const monthRate = detail ? rateForMonth(detail.rateHistory, year, month) : 0
+  const monthSalary = monthDays * monthRate
+  const monthActual = detail?.salaries?.find((s) => s.year === year && s.month === month)?.amount ?? 0
+  const monthGap = afterWithholding(monthSalary - monthActual)
+  const monthExpenseTotal = monthExpenses.reduce((sum, e) => sum + e.amount, 0)
 
   return (
     <>
@@ -97,8 +125,10 @@ export default function PaymentLaborDetailPage() {
         <>
           <div className="card-grid">
             <div className="metric-card">
-              <div className="label">단가</div>
-              <div className="value">{formatWon(detail.rate)}</div>
+              <div className="label">
+                {year}년 {month}월 단가
+              </div>
+              <div className="value">{formatWon(monthRate)}</div>
             </div>
             <div className="metric-card">
               <div className="label">
@@ -110,7 +140,19 @@ export default function PaymentLaborDetailPage() {
               <div className="label">
                 {year}년 {month}월 급여
               </div>
-              <div className="value">{formatWon(monthDays * detail.rate)}</div>
+              <div className="value">{formatWon(monthSalary)}</div>
+            </div>
+            <div className="metric-card">
+              <div className="label">
+                {year}년 {month}월 차액
+              </div>
+              <div className="value">{formatWon(monthGap)}</div>
+            </div>
+            <div className="metric-card">
+              <div className="label">
+                {year}년 {month}월 지출금액
+              </div>
+              <div className="value">{formatWon(monthExpenseTotal)}</div>
             </div>
           </div>
 
@@ -126,14 +168,20 @@ export default function PaymentLaborDetailPage() {
               if (day === null) return <div key={`empty-${i}`} className="cal-cell empty" />
 
               const dateStr = ymd(year, month, day)
-              const rec = attendance[dateStr]
+              const records = attendance[dateStr] ?? []
+              const dayHours = records.reduce((sum, r) => sum + r.hours, 0)
               const cls = ['cal-cell']
-              if (rec) cls.push(rec.hours === 1 ? 'cal-full' : 'cal-half')
+              if (dayHours >= 1) cls.push('cal-full')
+              else if (dayHours > 0) cls.push('cal-half')
 
               return (
                 <div key={dateStr} className={cls.join(' ')}>
                   {day}
-                  {rec && <span className="cal-site">{rec.siteName}</span>}
+                  {records.map((rec) => (
+                    <span key={rec.id} className="cal-site">
+                      {rec.siteName}
+                    </span>
+                  ))}
                 </div>
               )
             })}

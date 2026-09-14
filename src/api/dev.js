@@ -28,13 +28,14 @@ export async function generateTestData() {
     .single()
   if (buildingError) throw buildingError
 
+  // 2호는 2층부터 시작하게 두어 시작 층·타입 표시를 같이 확인할 수 있게 한다
   const { error: linesError } = await supabase.from('building_lines').insert([
-    { building_id: building.id, line_no: 1, max_floor: 5 },
-    { building_id: building.id, line_no: 2, max_floor: 5 },
+    { building_id: building.id, line_no: 1, min_floor: 1, max_floor: 5, unit_type: '84A' },
+    { building_id: building.id, line_no: 2, min_floor: 2, max_floor: 5, unit_type: '59B' },
   ])
   if (linesError) throw linesError
 
-  // 1라인은 일부만 완료된 상태로, 2라인은 미완료 상태로 남겨 진행중/완료 표시를 모두 볼 수 있게 한다
+  // 1호는 일부만 완료된 상태로, 2호는 미완료 상태로 남겨 진행중/완료 표시를 모두 볼 수 있게 한다
   const checks = []
   for (let floor = 1; floor <= 5; floor++) {
     checks.push({ building_id: building.id, line_no: 1, floor, sheet: 'main', light: true, laminate: floor <= 3 })
