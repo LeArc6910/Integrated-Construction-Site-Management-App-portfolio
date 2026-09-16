@@ -12,13 +12,15 @@ export function cellKey(buildingId, lineNo, floor) {
   return `${buildingId}-${lineNo}-${floor}`
 }
 
-// 오래된 오프라인 캐시에는 min_floor/unit_type이 없다. 예전처럼 1층부터 시작하는 라인으로 본다.
+// 오래된 오프라인 캐시에는 min_floor/unit_type/core_label이 없다. 예전처럼 1층부터 시작하고
+// 타입·코어 표기가 없는 라인으로 본다.
 function normalizeLine(line) {
   return {
     line_no: line.line_no,
     min_floor: line.min_floor ?? 1,
     max_floor: line.max_floor,
     unit_type: line.unit_type ?? null,
+    core_label: line.core_label ?? null,
   }
 }
 
@@ -43,7 +45,7 @@ export async function fetchSiteSheet({ siteId }) {
       .order('name'),
     supabase
       .from('buildings')
-      .select('id, name, building_lines(line_no, min_floor, max_floor, unit_type)')
+      .select('id, name, building_lines(line_no, min_floor, max_floor, unit_type, core_label)')
       .eq('site_id', ownerId)
       .order('sort_order'),
   ])
@@ -241,7 +243,7 @@ export async function fetchCellLogs({ buildingId, lineNo, floor, sheet }) {
   return data
 }
 
-// lines는 호 순서대로 { minFloor, maxFloor, unitType }를 담은 배열이다.
+// lines는 호 순서대로 { minFloor, maxFloor, unitType, coreLabel }를 담은 배열이다.
 function lineRows(buildingId, lines) {
   return lines.map((line, index) => ({
     building_id: buildingId,
@@ -249,6 +251,7 @@ function lineRows(buildingId, lines) {
     min_floor: line.minFloor,
     max_floor: line.maxFloor,
     unit_type: line.unitType || null,
+    core_label: line.coreLabel || null,
   }))
 }
 

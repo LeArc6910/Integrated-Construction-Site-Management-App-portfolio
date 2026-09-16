@@ -4,6 +4,7 @@ import { fetchCompletedPaymentSiteList } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatWon } from '../../lib/format'
+import SiteTotalsCards from '../../components/SiteTotalsCards'
 
 // 현장관리에서 세대가 전부 체크되어 "완료"로 뜨는 현장은 여기로 옮겨와 보인다.
 export default function PaymentCompletedSitesTab() {
@@ -37,6 +38,8 @@ export default function PaymentCompletedSitesTab() {
           {error}
         </p>
       )}
+
+      <SiteTotalsCards sites={sites} month={month} />
 
       <div className="table">
         <div className="row head pay-site-row">

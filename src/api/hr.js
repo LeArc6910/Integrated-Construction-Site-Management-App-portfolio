@@ -34,21 +34,27 @@ function effectiveRate(historyRows, userId, year, month) {
   return best?.rate ?? 0
 }
 
-// 인사관리 목록: 인원별 그 달 출근일수·지출비용·단가·권한
+// 인사관리 목록: 인원별 그 달 출근일수·담당현장·단가·권한 (지출비용은 결제 > 지출비용으로 옮겨감)
+// 담당현장은 결제 > 현장 상세의 "투입 인원"(site_members)과 같은 기준이다. 삭제(보관)된 현장은 뺀다.
 export async function fetchHrList({ year, month }) {
   const { from, to } = monthRange(year, month)
-  const [profilesRes, attendancesRes, expensesRes, rateHistoryRes] = await Promise.all([
+  const [profilesRes, attendancesRes, rateHistoryRes, membersRes] = await Promise.all([
     supabase.from('profiles').select('id, name, role').order('name'),
     supabase.from('attendances').select('user_id, hours').gte('work_date', from).lte('work_date', to),
-    supabase.from('expenses').select('user_id, amount').gte('spent_on', from).lte('spent_on', to),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
+    supabase.from('site_members').select('user_id, sites(name, archived_at)'),
   ])
 
-  const error = profilesRes.error || attendancesRes.error || expensesRes.error || rateHistoryRes.error
+  const error = profilesRes.error || attendancesRes.error || rateHistoryRes.error || membersRes.error
   if (error) throw error
 
   const daysByUser = sumByUser(attendancesRes.data, 'hours')
-  const expenseByUser = sumByUser(expensesRes.data, 'amount')
+
+  const sitesByUser = {}
+  membersRes.data.forEach((row) => {
+    if (!row.sites || row.sites.archived_at) return
+    ;(sitesByUser[row.user_id] ??= []).push(row.sites.name)
+  })
 
   return profilesRes.data.map((profile) => ({
     userId: profile.id,
@@ -56,7 +62,7 @@ export async function fetchHrList({ year, month }) {
     role: profile.role,
     rate: effectiveRate(rateHistoryRes.data, profile.id, year, month),
     days: daysByUser[profile.id] ?? 0,
-    expenseTotal: expenseByUser[profile.id] ?? 0,
+    sites: (sitesByUser[profile.id] ?? []).sort((a, b) => a.localeCompare(b)),
   }))
 }
 

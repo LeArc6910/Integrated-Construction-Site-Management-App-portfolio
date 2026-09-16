@@ -27,6 +27,12 @@ export default function PaymentLaborTab() {
     setPeriod(y, m)
   }
 
+  // 차액 합계는 표에 보이는 사람별 차액(각각 3.3% 공제 후 원 단위 절사)을 그대로 더해 표와 맞춘다
+  const totals = rows.reduce(
+    (sum, row) => ({ salary: sum.salary + row.salary, actual: sum.actual + row.actual, gap: sum.gap + row.gap }),
+    { salary: 0, actual: 0, gap: 0 }
+  )
+
   return (
     <div>
       <CalendarNav year={year} month={month} onChange={handleCalChange} />
@@ -36,6 +42,21 @@ export default function PaymentLaborTab() {
           {error}
         </p>
       )}
+
+      <div className="card-grid">
+        <div className="metric-card">
+          <div className="label">급여 합계</div>
+          <div className="value">{formatWon(totals.salary)}</div>
+        </div>
+        <div className="metric-card">
+          <div className="label">실급여 합계</div>
+          <div className="value">{formatWon(totals.actual)}</div>
+        </div>
+        <div className="metric-card">
+          <div className="label">차액 합계</div>
+          <div className="value">{formatWon(totals.gap)}</div>
+        </div>
+      </div>
 
       <div className="table">
         <div className="row head pay-person-row">

@@ -28,10 +28,11 @@ export async function generateTestData() {
     .single()
   if (buildingError) throw buildingError
 
-  // 2호는 2층부터 시작하게 두어 시작 층·타입 표시를 같이 확인할 수 있게 한다
+  // 2·3호는 2층부터 시작하게 두어 시작 층·타입·1층 빗금·코어 병합 표시를 같이 확인할 수 있게 한다
   const { error: linesError } = await supabase.from('building_lines').insert([
-    { building_id: building.id, line_no: 1, min_floor: 1, max_floor: 5, unit_type: '84A' },
-    { building_id: building.id, line_no: 2, min_floor: 2, max_floor: 5, unit_type: '59B' },
+    { building_id: building.id, line_no: 1, min_floor: 1, max_floor: 5, unit_type: '84A', core_label: '1 core' },
+    { building_id: building.id, line_no: 2, min_floor: 2, max_floor: 5, unit_type: '59B', core_label: '1 core' },
+    { building_id: building.id, line_no: 3, min_floor: 2, max_floor: 4, unit_type: '59B', core_label: '2 core' },
   ])
   if (linesError) throw linesError
 

@@ -111,6 +111,10 @@ export default function SettingsPage() {
           연락처
         </div>
         <div className="value">{user.phone || '미등록'}</div>
+        <div className="label" style={{ marginTop: 8 }}>
+          소속 팀
+        </div>
+        <div className="value">{user.team_name || '-'}</div>
       </div>
       <button type="button" className="btn small" onClick={openEdit}>
         내 정보 수정

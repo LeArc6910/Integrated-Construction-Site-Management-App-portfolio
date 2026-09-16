@@ -33,6 +33,44 @@ export async function fetchMonthExpenses({ userId, year, month }) {
   }))
 }
 
+// 결제 > 지출비용: 인원별 그 달 지출 합계와 내역. 지출이 없는 인원도 목록에는 0원으로 보여준다.
+export async function fetchExpenseOverview({ year, month }) {
+  const { from, to } = monthRange(year, month)
+  const [profilesRes, expensesRes] = await Promise.all([
+    supabase.from('profiles').select('id, name').order('name'),
+    supabase
+      .from('expenses')
+      .select('id, user_id, spent_on, place, content, amount, receipt_path')
+      .gte('spent_on', from)
+      .lte('spent_on', to)
+      .order('spent_on'),
+  ])
+  const error = profilesRes.error || expensesRes.error
+  if (error) throw error
+
+  const byUser = {}
+  expensesRes.data.forEach((row) => {
+    ;(byUser[row.user_id] ??= []).push({
+      id: row.id,
+      date: row.spent_on,
+      place: row.place,
+      content: row.content,
+      amount: row.amount,
+      receiptPath: row.receipt_path,
+    })
+  })
+
+  return profilesRes.data.map((profile) => {
+    const items = byUser[profile.id] ?? []
+    return {
+      userId: profile.id,
+      name: profile.name,
+      total: items.reduce((sum, item) => sum + item.amount, 0),
+      items,
+    }
+  })
+}
+
 // 원본 파일명을 경로에 그대로 쓰면 한글·공백·괄호 등으로 storage key가 유효하지 않다는
 // 에러가 나서, 확장자만 남기고 나머지는 uuid로 생성한다.
 function safeExtension(filename) {

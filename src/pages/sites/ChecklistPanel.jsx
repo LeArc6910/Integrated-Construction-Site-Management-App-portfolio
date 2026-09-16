@@ -6,6 +6,7 @@ import {
   setChecklistChecked,
   updateChecklistContent,
 } from '../../api/checklist'
+import AutoGrowTextarea from '../../components/AutoGrowTextarea'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -92,28 +93,28 @@ export default function ChecklistPanel({ siteId, userId, names }) {
 
       <div className="checklist">
         {items.length === 0 && <p className="text-secondary">등록된 체크리스트 항목이 없습니다.</p>}
+        {/* 내용은 한 줄 전체 폭을 쓰고 줄바꿈되어 끝까지 보이게 하고, 완료 체크·처리자·삭제는 그 아래 줄에 둔다 */}
         {items.map((item) => (
           <div key={item.id} className="checklist-row">
-            <input
-              type="text"
+            <AutoGrowTextarea
               className="checklist-content"
               placeholder="작업 내용을 입력하세요"
               value={item.content}
               onChange={(e) => handleContentChange(item.id, e.target.value)}
               onBlur={(e) => handleContentBlur(item.id, e.target.value)}
             />
-            <div className="checklist-check">
-              <label>
+            <div className="checklist-foot">
+              <label className="checklist-check">
                 <input type="checkbox" checked={item.checked} onChange={() => handleToggle(item)} />
                 완료
               </label>
               <span className="text-secondary checklist-meta">
                 {item.checked ? `마지막 체크: ${names[item.checked_by] ?? '알 수 없음'} · ${formatStamp(item.checked_at)}` : ''}
               </span>
+              <button type="button" className="link-btn checklist-delete" onClick={() => handleDelete(item.id)}>
+                삭제
+              </button>
             </div>
-            <button type="button" className="link-btn" onClick={() => handleDelete(item.id)}>
-              삭제
-            </button>
           </div>
         ))}
       </div>

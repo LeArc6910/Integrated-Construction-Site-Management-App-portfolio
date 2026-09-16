@@ -7,12 +7,12 @@ export async function signIn({ email, password }) {
   if (error) throw error
 }
 
-// 이름은 user metadata로 넘기고, profiles 행은 DB 트리거(handle_new_user)가 생성한다
-export async function signUp({ name, email, password }) {
+// 이름·팀은 user metadata로 넘기고, profiles 행은 DB 트리거(handle_new_user)가 그 팀 소속으로 생성한다
+export async function signUp({ name, email, password, teamId }) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { name } },
+    options: { data: { name, team_id: teamId } },
   })
   if (error) throw error
 
@@ -37,14 +37,25 @@ export async function signOut() {
   if (error) await supabase.auth.signOut({ scope: 'local' })
 }
 
+// current_team_id: 지금 보고 있는 팀(개발자는 전환한 팀, 그 외는 소속 팀). 화면에 팀 이름을 띄우려고
+// 팀 목록도 함께 받아 이름을 붙인다.
 export async function fetchProfile(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('name, phone, role, is_test_account')
-    .eq('id', userId)
-    .single()
-  if (error) throw error
-  return data
+  const [profileRes, teamsRes] = await Promise.all([
+    supabase.from('profiles').select('name, phone, role, is_test_account, team_id, active_team_id').eq('id', userId).single(),
+    supabase.rpc('list_teams'),
+  ])
+  if (profileRes.error) throw profileRes.error
+  if (teamsRes.error) throw teamsRes.error
+
+  const profile = profileRes.data
+  const nameById = Object.fromEntries(teamsRes.data.map((team) => [team.id, team.name]))
+  const currentTeamId = profile.role === '개발자' ? (profile.active_team_id ?? profile.team_id) : profile.team_id
+  return {
+    ...profile,
+    team_name: nameById[profile.team_id] ?? '',
+    current_team_id: currentTeamId,
+    current_team_name: nameById[currentTeamId] ?? '',
+  }
 }
 
 export async function updateProfile({ userId, name, phone }) {

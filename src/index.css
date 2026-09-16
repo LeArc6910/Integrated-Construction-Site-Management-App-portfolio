@@ -547,13 +547,72 @@ input[type='date'] {
 }
 
 .hr-row {
-  grid-template-columns: 1fr 1fr 1fr 1fr 1.4fr;
+  grid-template-columns: 1fr 0.8fr 1.4fr 1fr 1.4fr;
+}
+
+.hr-sites {
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .hr-actions {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+/* 표의 한 줄을 눌렀을 때 그 아래로 펼쳐지는 상세 목록 */
+.expand-list {
+  border-top: 1px dashed var(--border);
+  background: #fafaf9;
+  padding: 4px 12px 8px 24px;
+}
+
+.expand-item {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.expand-item:last-child {
+  border-bottom: 0;
+}
+
+.expand-empty {
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.salary-detail-row {
+  grid-template-columns: 1.6fr 1fr 0.8fr;
+}
+
+.pay-expense-row {
+  grid-template-columns: 1fr 1fr;
+}
+
+.expense-toggle {
+  justify-self: start;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.expense-toggle-mark {
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.expense-detail-row {
+  grid-template-columns: 0.6fr 1fr 1.4fr 1fr 0.4fr;
 }
 
 .salary-form {
@@ -666,6 +725,20 @@ input[type='date'] {
   font-size: 14px;
 }
 
+.auth-select {
+  width: 100%;
+  padding: 9px 10px;
+  margin: 0 0 4px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.auth-hint {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .auth-check {
   display: flex;
   align-items: center;
@@ -703,6 +776,16 @@ input[type='date'] {
   font-size: 13px;
   background: var(--orange-bg);
   color: var(--orange);
+}
+
+/* 개발자가 다른 팀 데이터를 보는 중임을 알리는 배너 */
+.team-view-banner {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--red-bg);
+  color: var(--red);
 }
 
 /* 세대표를 다른 현장과 함께 쓰는 중임을 알리는 배너 */
@@ -797,13 +880,18 @@ input[type='date'] {
   color: var(--text-secondary);
 }
 
-/* 세대표 수정: 호별 시작층·마지막층·타입 입력 */
+/* 세대표 수정: 호별 시작층·마지막층·타입·코어 입력 */
 .line-edit-head,
 .line-edit-row {
   display: grid;
-  grid-template-columns: 44px 1fr 1fr 1.4fr;
+  grid-template-columns: 40px 1fr 1fr 1.2fr 1.4fr;
   gap: 6px;
   align-items: center;
+}
+
+.line-edit-hint {
+  margin: 0 0 4px;
+  font-size: 12px;
 }
 
 .line-edit-head {
@@ -952,6 +1040,41 @@ input[type='date'] {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/* 동 하단 요약: 라인별 세대수·코어(연속 병합)·총 세대수/최고층 */
+.unit-table td.summary-cell {
+  height: 24px;
+  padding: 0 3px;
+  font-size: 10px;
+  cursor: default;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+/* 좁은 동에서 글자가 칸 폭을 밀어내 세대 칸 크기가 달라지지 않도록 줄바꿈을 허용한다 */
+.unit-table td.core-cell {
+  background: #fff;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.unit-table td.summary-total {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  padding: 3px;
+}
+
+.summary-head {
+  font-size: 10px;
+}
+
+.unit-table td.line-no-cell {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .unit-cell.disabled {
   background: repeating-linear-gradient(45deg, #efefec, #efefec 4px, #f5f5f3 4px, #f5f5f3 8px);
   cursor: default;
@@ -997,8 +1120,8 @@ input[type='date'] {
 
 .checklist-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 2px;
   border-bottom: 1px solid var(--border);
 }
@@ -1007,21 +1130,48 @@ input[type='date'] {
   border-bottom: 0;
 }
 
-.checklist-content {
-  flex: 1;
-  min-width: 0;
+/* 내용 길이만큼 높이가 늘어나는 입력칸 (AutoGrowTextarea) */
+.auto-grow {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.checklist-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
 }
 
 .checklist-check {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
 .checklist-meta {
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
+}
+
+.checklist-delete {
+  margin-left: auto;
+  font-size: 12px;
 }
 
 /* 세대 상세 사이드 패널 */
@@ -1120,8 +1270,8 @@ input[type='date'] {
   font-size: 11px;
 }
 
-/* 모달 입력 */
-.modal-box input:not([type='checkbox']) {
+/* 모달 입력 (라디오 버튼까지 100% 폭이 되면 옆 글자가 한 글자씩 세로로 쪼개진다) */
+.modal-box input:not([type='checkbox']):not([type='radio']) {
   width: 100%;
   padding: 8px;
   margin-bottom: 4px;
@@ -1145,6 +1295,93 @@ input[type='date'] {
   margin: 0;
   font-size: 13px;
   color: var(--text);
+}
+
+/* 개인 > 작업보고 */
+.report-site-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.report-preview {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+}
+
+/* 이미지는 고해상도로 그려서 원래(배율 적용 전) 폭으로 보여주고, 넘치면 가로로 스크롤한다 */
+.report-preview img {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+.report-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.report-text {
+  min-height: 160px;
+  font-size: 13px;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dashboard-note {
+  margin: -8px 0 4px;
+  font-size: 12px;
+}
+
+/* 개인 > 급여 */
+.salary-period-note {
+  margin: -8px 0 12px;
+  font-size: 12px;
+}
+
+.salary-entry-row {
+  grid-template-columns: 1.6fr 1fr 0.7fr;
+}
+
+.salary-month-warning {
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--orange);
+  border-radius: 8px;
+  background: var(--orange-bg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.salary-month-select {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.salary-month-chip {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.salary-amount-preview {
+  margin: 0;
+  font-size: 12px;
 }
 
 /* 설정 */
@@ -1178,10 +1415,39 @@ input[type='date'] {
   gap: 8px;
 }
 
+.dev-help {
+  max-width: 520px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.dev-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dev-input {
+  width: 180px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.dev-member-row {
+  grid-template-columns: 1.2fr 0.8fr 1.2fr;
+}
+
 /* iOS는 16px 미만 입력창에 포커스하면 화면을 확대하므로 모바일에서만 키운다 */
 @media (max-width: 760px) {
   .auth-box input:not([type='checkbox']),
-  .modal-box input:not([type='checkbox']) {
+  .auth-select,
+  .modal-box input:not([type='checkbox']):not([type='radio']),
+  .auto-grow {
     font-size: 16px;
   }
 
