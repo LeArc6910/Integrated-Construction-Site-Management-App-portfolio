@@ -1,5 +1,13 @@
 import { useRef, useState } from 'react'
 import { cellKey, checkKey } from '../../api/unitSheet'
+import {
+  buildingSummary,
+  coreGroups,
+  floorsOf,
+  hasCoreInfo,
+  inLine,
+  sharedFloorsOf,
+} from '../../lib/unitSheetLayout'
 
 // 경량은 왼쪽 절반, 합지는 오른쪽 절반을 칠해서 한 칸에 두 작업을 같이 보여준다.
 function checkBackground(check) {
@@ -9,22 +17,35 @@ function checkBackground(check) {
   return { background: `linear-gradient(to right, ${left} 50%, ${right} 50%)` }
 }
 
-function lineRange(line) {
-  return { min: line.min_floor ?? 1, max: line.max_floor }
-}
-
-// 동에 그릴 층 목록. 가장 높은 층이 위로 오게 내림차순으로 만든다.
-function floorsOf(building) {
-  if (building.lines.length === 0) return []
-  const min = Math.min(...building.lines.map((line) => lineRange(line).min))
-  const max = Math.max(...building.lines.map((line) => lineRange(line).max))
-  if (max < min) return []
-  return Array.from({ length: max - min + 1 }, (_, i) => max - i)
-}
-
-function inLine(line, floor) {
-  const { min, max } = lineRange(line)
-  return floor >= min && floor <= max
+function SummaryRows({ building }) {
+  const { total, maxFloor } = buildingSummary(building)
+  return (
+    <>
+      <tr>
+        <td className="floor-head summary-head" />
+        {building.lines.map((line) => (
+          <td key={line.line_no} className="summary-cell line-no-cell">
+            {line.line_no}호
+          </td>
+        ))}
+      </tr>
+      {hasCoreInfo(building) && (
+        <tr>
+          <td className="floor-head summary-head">코어</td>
+          {coreGroups(building.lines).map((group, index) => (
+            <td key={index} colSpan={group.span} className="summary-cell core-cell">
+              {group.label ?? ''}
+            </td>
+          ))}
+        </tr>
+      )}
+      <tr>
+        <td colSpan={building.lines.length + 1} className="summary-cell summary-total">
+          {building.name} · {total}세대 · {maxFloor}F
+        </td>
+      </tr>
+    </>
+  )
 }
 
 // 처음 누른 칸과 지금 손이 올라간 칸이 만드는 직사각형 안에서, 실제로 존재하는 칸만 모은다.
@@ -110,6 +131,8 @@ export default function UnitSheetTable({
     return <p className="text-secondary">등록된 동이 없습니다. 아래 &quot;세대표 수정&quot;에서 동을 추가하세요.</p>
   }
 
+  const sharedFloors = horizontal ? sharedFloorsOf(buildings) : null
+
   return (
     <div className="sheet-scroll">
       <div
@@ -131,7 +154,7 @@ export default function UnitSheetTable({
                   ))}
                 </tr>
 
-                {floorsOf(building).map((floor) => (
+                {(sharedFloors ?? floorsOf(building)).map((floor) => (
                   <tr key={floor}>
                     <td className="floor-head">{floor}층</td>
                     {building.lines.map((line) => {
@@ -185,6 +208,8 @@ export default function UnitSheetTable({
                     })}
                   </tr>
                 ))}
+
+                {building.lines.length > 0 && <SummaryRows building={building} />}
               </tbody>
             </table>
           </div>

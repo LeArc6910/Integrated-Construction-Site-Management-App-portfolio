@@ -5,7 +5,7 @@ import Modal from '../../components/Modal'
 const MAX_LINES = 50
 
 function emptyLine() {
-  return { min: '1', max: '', type: '' }
+  return { min: '1', max: '', type: '', core: '' }
 }
 
 function emptyTarget() {
@@ -17,6 +17,7 @@ function toTarget(building) {
     min: String(line.min_floor ?? 1),
     max: String(line.max_floor),
     type: line.unit_type ?? '',
+    core: line.core_label ?? '',
   }))
   return { id: building.id, name: building.name, lines, lineText: String(lines.length) }
 }
@@ -113,6 +114,7 @@ export default function BuildingEditModal({ buildings, onClose, onSubmit, onDele
         minFloor: range.min,
         maxFloor: range.max,
         unitType: target.lines[index].type.trim(),
+        coreLabel: target.lines[index].core.trim(),
       })),
     })
   }
@@ -211,12 +213,16 @@ export default function BuildingEditModal({ buildings, onClose, onSubmit, onDele
         onBlur={handleLineCountBlur}
       />
 
-      <label>호별 층 범위와 타입</label>
+      <label>호별 층 범위·타입·코어</label>
+      <p className="text-secondary line-edit-hint">
+        같은 코어를 쓰는 호에 같은 이름(예: 1 core)을 넣으면 세대표 아래에 한 칸으로 합쳐 표시됩니다.
+      </p>
       <div className="line-edit-head">
         <span className="line-edit-no" />
         <span>시작층</span>
         <span>마지막층</span>
         <span>타입</span>
+        <span>코어</span>
       </div>
       {target.lines.map((line, index) => (
         <div key={index} className="line-edit-row">
@@ -238,6 +244,12 @@ export default function BuildingEditModal({ buildings, onClose, onSubmit, onDele
             onChange={(e) => patchLine(index, { max: e.target.value.replace(/[^0-9]/g, '') })}
           />
           <input type="text" placeholder="84A" value={line.type} onChange={(e) => patchLine(index, { type: e.target.value })} />
+          <input
+            type="text"
+            placeholder="1 core"
+            value={line.core}
+            onChange={(e) => patchLine(index, { core: e.target.value })}
+          />
         </div>
       ))}
 

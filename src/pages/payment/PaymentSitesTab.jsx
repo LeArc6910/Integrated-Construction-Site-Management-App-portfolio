@@ -4,6 +4,7 @@ import { fetchPaymentSiteList } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatWon } from '../../lib/format'
+import SiteTotalsCards from '../../components/SiteTotalsCards'
 
 export default function PaymentSitesTab() {
   const navigate = useNavigate()
@@ -36,6 +37,8 @@ export default function PaymentSitesTab() {
           {error}
         </p>
       )}
+
+      <SiteTotalsCards sites={sites} month={month} />
 
       <div className="table">
         <div className="row head pay-site-row">

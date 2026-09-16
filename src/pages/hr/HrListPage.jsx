@@ -92,7 +92,7 @@ export default function HrListPage() {
         <div className="row head hr-row">
           <span>이름</span>
           <span>출근일수</span>
-          <span>지출비용</span>
+          <span>담당현장</span>
           <span>단가</span>
           <span>수정</span>
         </div>
@@ -107,7 +107,9 @@ export default function HrListPage() {
               {row.name}
             </Link>
             <span>{formatDays(row.days)}</span>
-            <span className="mono">{formatWon(row.expenseTotal)}</span>
+            <span className={row.sites.length ? 'hr-sites' : 'hr-sites text-secondary'}>
+              {row.sites.length ? row.sites.join(', ') : '없음'}
+            </span>
             <span className="mono">{formatWon(row.rate)}</span>
             <span className="hr-actions">
               <button type="button" className="btn small" onClick={() => openEditRate(row)}>

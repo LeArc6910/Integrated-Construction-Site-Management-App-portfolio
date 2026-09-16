@@ -22,6 +22,7 @@ import {
 import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
 import { enqueueWrite } from '../../lib/offlineQueue'
+import { canvasToFile, renderUnitSheetImage, saveImageFile, sheetImageFileName } from '../../lib/unitSheetImage'
 import BuildingEditModal from './BuildingEditModal'
 import CellPanel from './CellPanel'
 import ChecklistPanel from './ChecklistPanel'
@@ -30,6 +31,25 @@ import SheetShareModal from './SheetShareModal'
 import UnitSheetTable from './UnitSheetTable'
 
 const ALL_BUILDINGS = '전체'
+
+// 가로/세로 보기는 기기에 기억해두고 다음에 어느 현장을 열어도 같은 방향으로 보여준다
+const HORIZONTAL_STORAGE_KEY = 'unitSheetHorizontal'
+
+function loadHorizontal() {
+  try {
+    return localStorage.getItem(HORIZONTAL_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function saveHorizontal(value) {
+  try {
+    localStorage.setItem(HORIZONTAL_STORAGE_KEY, String(value))
+  } catch {
+    // 저장소를 못 쓰는 환경(사생활 보호 모드 등)이면 이번 화면에서만 유지된다
+  }
+}
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -62,7 +82,7 @@ export default function SiteDetailPage() {
   const [view, setView] = useState('sheet') // 'sheet' | 'checklist'
   const [buildingFilter, setBuildingFilter] = useState(ALL_BUILDINGS)
   const [scale, setScale] = useState(1)
-  const [horizontal, setHorizontal] = useState(false)
+  const [horizontal, setHorizontal] = useState(loadHorizontal)
   const [sheetView, setSheetView] = useState('main') // 'main' | 'plaster'
   const [bar, setBar] = useState('default') // 'default' | 'work' | 'defect'
   const [workSub, setWorkSub] = useState(null) // 'light' | 'laminate'
@@ -520,6 +540,27 @@ export default function SiteDetailPage() {
     }
   }
 
+  // 이미지 생성과 공유 호출을 기다림 없이 이어서 해야 iOS에서 공유 창이 막히지 않는다
+  function handleDownloadSheet() {
+    setError('')
+    setNotice('')
+    try {
+      const siteName = sheet.site?.name ?? '현장'
+      const title = buildingFilter === ALL_BUILDINGS ? siteName : `${siteName} ${buildingFilter}`
+      const canvas = renderUnitSheetImage({ title, buildings: visibleBuildings, checks: sheet.checks })
+      const file = canvasToFile(canvas, sheetImageFileName(title))
+      saveImageFile(file).catch((err) => setError(err.message))
+    } catch (err) {
+      setError(`세대표 이미지를 만들지 못했습니다: ${err.message}`)
+    }
+  }
+
+  function toggleHorizontal() {
+    const next = !horizontal
+    setHorizontal(next)
+    saveHorizontal(next)
+  }
+
   const visibleBuildings =
     buildingFilter === ALL_BUILDINGS
       ? sheet.buildings
@@ -582,7 +623,7 @@ export default function SiteDetailPage() {
           ))}
         </select>
         <div className="zoom-controls">
-          <button type="button" className="btn small" onClick={() => setHorizontal((h) => !h)}>
+          <button type="button" className="btn small" onClick={toggleHorizontal}>
             {horizontal ? '세로 보기' : '가로 보기'}
           </button>
           <button type="button" className="btn small" onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}>
@@ -667,6 +708,14 @@ export default function SiteDetailPage() {
             </button>
             <button type="button" className="btn" disabled={sheet.offline} onClick={() => setShareModal(true)}>
               세대표 공유
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={visibleBuildings.length === 0}
+              onClick={handleDownloadSheet}
+            >
+              세대표 다운로드
             </button>
           </>
         )}

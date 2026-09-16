@@ -12,6 +12,8 @@ export default function Sidebar() {
       <div className="sidebar-brand">현장 관리 어플</div>
       <div className="sidebar-role">
         현재 권한: <b>{user.role}</b>
+        <br />
+        {user.current_team_id !== user.team_id ? '보는 중인 팀' : '소속 팀'}: <b>{user.current_team_name}</b>
       </div>
 
       {menus.map(({ key, label, path, icon: Icon }) => (

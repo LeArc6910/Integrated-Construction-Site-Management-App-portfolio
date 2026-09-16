@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import Modal from '../../components/Modal'
 
+// '전체'는 개별 위치를 한꺼번에 고르는 단축키가 아니라 그 자체로 하나의 위치 값이다.
+// 전체를 고르면 "세대 전체" 한 건으로 등록된다.
+const ALL_LOCATION = '전체'
 const LOCATIONS = ['거실', '주방', '침실', '안방', '기타']
-const TYPES = ['적재', '작업', '기타']
+const TYPES = ['적재', '작업', '천장작업', '기타']
 
 function toggle(list, value) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
@@ -15,10 +18,15 @@ export default function DefectAddModal({ onClose, onSubmit, saving }) {
   const [typeEtc, setTypeEtc] = useState('')
   const [error, setError] = useState('')
 
-  const allLocationsChecked = locations.length === LOCATIONS.length
+  const allChecked = locations.includes(ALL_LOCATION)
 
-  function handleToggleAllLocations() {
-    setLocations(allLocationsChecked ? [] : [...LOCATIONS])
+  // 전체와 개별 위치는 함께 고를 수 없다. 전체를 켜면 개별 위치가 풀리고, 개별 위치를 고르면 전체가 풀린다.
+  function handleToggleAll() {
+    setLocations(allChecked ? [] : [ALL_LOCATION])
+  }
+
+  function handleToggleLocation(loc) {
+    setLocations((prev) => toggle(prev.filter((item) => item !== ALL_LOCATION), loc))
   }
 
   function handleSubmit() {
@@ -39,15 +47,15 @@ export default function DefectAddModal({ onClose, onSubmit, saving }) {
 
   return (
     <Modal title="미타공 등록" onClose={onClose}>
-      <label>위치 (복수 선택)</label>
+      <label>위치 (복수 선택 · 전체는 단독 선택)</label>
       <div className="checkbox-group">
         <label>
-          <input type="checkbox" checked={allLocationsChecked} onChange={handleToggleAllLocations} />
-          전체
+          <input type="checkbox" checked={allChecked} onChange={handleToggleAll} />
+          {ALL_LOCATION}
         </label>
         {LOCATIONS.map((loc) => (
           <label key={loc}>
-            <input type="checkbox" checked={locations.includes(loc)} onChange={() => setLocations(toggle(locations, loc))} />
+            <input type="checkbox" checked={locations.includes(loc)} onChange={() => handleToggleLocation(loc)} />
             {loc}
           </label>
         ))}

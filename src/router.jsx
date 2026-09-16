@@ -8,12 +8,15 @@ import PersonalPage from './pages/personal/PersonalPage'
 import DashboardTab from './pages/personal/DashboardTab'
 import AttendanceTab from './pages/personal/AttendanceTab'
 import ExpenseTab from './pages/personal/ExpenseTab'
+import WorkReportTab from './pages/personal/WorkReportTab'
+import SalaryTab from './pages/personal/SalaryTab'
 import SiteListPage from './pages/sites/SiteListPage'
 import SiteDetailPage from './pages/sites/SiteDetailPage'
 import PaymentPage from './pages/payment/PaymentPage'
 import PaymentSitesTab from './pages/payment/PaymentSitesTab'
 import PaymentCompletedSitesTab from './pages/payment/PaymentCompletedSitesTab'
 import PaymentLaborTab from './pages/payment/PaymentLaborTab'
+import PaymentExpenseTab from './pages/payment/PaymentExpenseTab'
 import PaymentStatsTab from './pages/payment/PaymentStatsTab'
 import PaymentSiteDetailPage from './pages/payment/PaymentSiteDetailPage'
 import PaymentLaborDetailPage from './pages/payment/PaymentLaborDetailPage'
@@ -42,7 +45,9 @@ export const router = createBrowserRouter([
               { index: true, element: <Navigate to="dashboard" replace /> },
               { path: 'dashboard', element: <DashboardTab /> },
               { path: 'attendance', element: <AttendanceTab /> },
+              { path: 'report', element: <WorkReportTab /> },
               { path: 'expense', element: <ExpenseTab /> },
+              { path: 'salary', element: <SalaryTab /> },
             ],
           },
 
@@ -62,6 +67,7 @@ export const router = createBrowserRouter([
                   { path: 'sites', element: <PaymentSitesTab /> },
                   { path: 'completed-sites', element: <PaymentCompletedSitesTab /> },
                   { path: 'labor', element: <PaymentLaborTab /> },
+                  { path: 'expenses', element: <PaymentExpenseTab /> },
                   { path: 'stats', element: <PaymentStatsTab /> },
                 ],
               },

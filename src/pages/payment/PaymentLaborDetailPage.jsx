@@ -1,28 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { IconPaperclip } from '@tabler/icons-react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchMonthAttendance } from '../../api/attendance'
-import { fetchMonthExpenses } from '../../api/expense'
-import {
-  afterWithholding,
-  deleteActualSalary,
-  fetchLaborDetail,
-  rateForMonth,
-  saveActualSalary,
-} from '../../api/payment'
+import { fetchMonthExpenses, getReceiptUrl } from '../../api/expense'
+import { afterWithholding, fetchLaborDetail, rateForMonth } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import { usePeriod } from '../../hooks/usePeriod'
 import { buildCells, DOW, ymd } from '../../lib/calendar'
 import { formatDays, formatWon } from '../../lib/format'
 
+// 실급여는 각 인원이 개인 > 급여에서 직접 입력한다. 이 화면은 조회만 한다.
 export default function PaymentLaborDetailPage() {
   const { userId } = useParams()
   const { year, month, setPeriod } = usePeriod()
-  const now = new Date()
   const [detail, setDetail] = useState(null)
   const [attendance, setAttendance] = useState({})
   const [monthExpenses, setMonthExpenses] = useState([])
-  const [form, setForm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1, amount: '' })
-  const [saving, setSaving] = useState(false)
+  const [openKey, setOpenKey] = useState(null)
   const [error, setError] = useState('')
 
   const loadDetail = useCallback(() => fetchLaborDetail({ userId }), [userId])
@@ -69,30 +63,9 @@ export default function PaymentLaborDetailPage() {
     setPeriod(y, m)
   }
 
-  async function handleSaveSalary() {
-    setSaving(true)
-    setError('')
+  async function handleViewReceipt(path) {
     try {
-      await saveActualSalary({
-        userId,
-        year: form.year,
-        month: form.month,
-        amount: parseInt(form.amount, 10) || 0,
-      })
-      setForm({ ...form, amount: '' })
-      setDetail(await loadDetail())
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDeleteSalary(id) {
-    setError('')
-    try {
-      await deleteActualSalary({ id })
-      setDetail(await loadDetail())
+      window.open(await getReceiptUrl(path), '_blank', 'noopener')
     } catch (err) {
       setError(err.message)
     }
@@ -187,7 +160,7 @@ export default function PaymentLaborDetailPage() {
             })}
           </div>
 
-          <span className="section-label">실급여 목록</span>
+          <span className="section-label">실급여 목록 (일한 달 기준 · 본인이 개인 &gt; 급여에서 입력)</span>
           <div className="table">
             <div className="row head salary-row">
               <span>연월</span>
@@ -198,50 +171,48 @@ export default function PaymentLaborDetailPage() {
             </div>
             {detail.salaries.length === 0 && (
               <div className="row">
-                <span className="text-secondary">등록된 실급여가 없습니다.</span>
+                <span className="text-secondary">입력된 실급여가 없습니다.</span>
               </div>
             )}
             {detail.salaries.map((salary) => (
-              <div key={salary.id} className="row salary-row">
-                <span>
-                  {salary.year}년 {salary.month}월
-                </span>
-                <span className="mono">{formatWon(salary.salary)}</span>
-                <span className="mono">{formatWon(salary.amount)}</span>
-                <span className="mono">{formatWon(salary.gap)}</span>
-                <button type="button" className="link-btn" onClick={() => handleDeleteSalary(salary.id)}>
-                  삭제
-                </button>
-              </div>
+              <Fragment key={salary.key}>
+                <div
+                  className="row clickable salary-row"
+                  onClick={() => setOpenKey((prev) => (prev === salary.key ? null : salary.key))}
+                >
+                  <span>
+                    {salary.year}년 {salary.month}월
+                  </span>
+                  <span className="mono">{formatWon(salary.salary)}</span>
+                  <span className="mono">{formatWon(salary.amount)}</span>
+                  <span className="mono">{formatWon(salary.gap)}</span>
+                  <span className="text-secondary">{openKey === salary.key ? '접기' : `${salary.entries.length}건`}</span>
+                </div>
+                {openKey === salary.key && (
+                  <div className="expand-list">
+                    {salary.entries.map((entry) => (
+                      <div key={entry.id} className="expand-item salary-detail-row">
+                        <span>{entry.siteName ?? '현장 미지정(이전 입력)'}</span>
+                        <span className="mono">{formatWon(entry.amount)}</span>
+                        <span>
+                          {entry.receiptPath ? (
+                            <button
+                              type="button"
+                              className="link-btn"
+                              onClick={() => handleViewReceipt(entry.receiptPath)}
+                            >
+                              <IconPaperclip size={14} stroke={1.75} /> 증빙
+                            </button>
+                          ) : (
+                            '-'
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
             ))}
-          </div>
-
-          <span className="section-label">실급여 입력</span>
-          <div className="salary-form">
-            <input
-              type="number"
-              value={form.year}
-              onChange={(e) => setForm({ ...form, year: Number(e.target.value) })}
-              aria-label="연도"
-            />
-            <input
-              type="number"
-              min="1"
-              max="12"
-              value={form.month}
-              onChange={(e) => setForm({ ...form, month: Number(e.target.value) })}
-              aria-label="월"
-            />
-            <input
-              type="number"
-              placeholder="실급여 금액"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              aria-label="실급여 금액"
-            />
-            <button type="button" className="btn primary" disabled={saving} onClick={handleSaveSalary}>
-              저장
-            </button>
           </div>
         </>
       )}
