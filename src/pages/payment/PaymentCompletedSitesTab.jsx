@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { fetchCompletedPaymentSiteList } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import { usePeriod } from '../../hooks/usePeriod'
-import { formatWon } from '../../lib/format'
 import SiteTotalsCards from '../../components/SiteTotalsCards'
+import PaymentSiteTable from './PaymentSiteTable'
 
 // 현장관리에서 세대가 전부 체크되어 "완료"로 뜨는 현장은 여기로 옮겨와 보인다.
 export default function PaymentCompletedSitesTab() {
-  const navigate = useNavigate()
   const { year, month, setPeriod } = usePeriod()
   const [sites, setSites] = useState([])
   const [error, setError] = useState('')
@@ -41,31 +39,11 @@ export default function PaymentCompletedSitesTab() {
 
       <SiteTotalsCards sites={sites} month={month} />
 
-      <div className="table">
-        <div className="row head pay-site-row">
-          <span>현장이름</span>
-          <span>계약금액</span>
-          <span>수령금액</span>
-          <span>남은금액</span>
-        </div>
-        {sites.length === 0 && (
-          <div className="row">
-            <span className="text-secondary">완료된 현장이 없습니다.</span>
-          </div>
-        )}
-        {sites.map((site) => (
-          <div
-            key={site.id}
-            className="row clickable pay-site-row"
-            onClick={() => navigate(`/payment/sites/${site.id}`)}
-          >
-            <span>{site.name}</span>
-            <span className="mono">{formatWon(site.contractAmount)}</span>
-            <span className="mono">{formatWon(site.receivedInMonth)}</span>
-            <span className="mono">{formatWon(site.remaining)}</span>
-          </div>
-        ))}
-      </div>
+      <PaymentSiteTable
+        sites={sites}
+        emptyText="완료된 현장이 없습니다."
+        storageKey="paymentCompletedSitesSort"
+      />
     </div>
   )
 }

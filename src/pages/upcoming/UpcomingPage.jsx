@@ -1,9 +1,39 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createUpcomingSite, deleteUpcomingSite, fetchUpcomingSites, updateUpcomingSite } from '../../api/upcoming'
 import Modal from '../../components/Modal'
+import { loadSort, saveSort } from '../../lib/storedSort'
 
 const EMPTY_VISIT = { date: '', alarm: false }
-const EMPTY_FORM = { name: '', location: '', phone: '', visits: [EMPTY_VISIT] }
+const EMPTY_FORM = { name: '', location: '', phone: '', completionDate: '', visits: [EMPTY_VISIT] }
+
+// 정렬 기준과 방향은 기기에 기억해둬서, 다음에 들어와도 마지막에 보던 순서 그대로 보인다
+const SORT_STORAGE_KEY = 'upcomingSort'
+const DEFAULT_SORT = { key: 'visit', asc: true }
+
+const SORT_OPTIONS = [
+  { key: 'visit', label: '방문일' },
+  { key: 'name', label: '이름' },
+  { key: 'completion', label: '준공일' },
+]
+
+// 정렬 키별로 현장에서 뽑아낼 값. 비어 있으면 null로 보고 항상 뒤로 보낸다.
+function sortValue(site, key) {
+  if (key === 'name') return site.name
+  if (key === 'completion') return site.completionDate || null
+  return site.nextVisit
+}
+
+function sortSites(sites, sort) {
+  return [...sites].sort((a, b) => {
+    const left = sortValue(a, sort.key)
+    const right = sortValue(b, sort.key)
+    // 값이 없는 현장(방문 예정 없음·준공일 미입력)은 방향과 상관없이 목록 끝에 둔다
+    if (!left && !right) return 0
+    if (!left) return 1
+    if (!right) return -1
+    return left.localeCompare(right, 'ko') * (sort.asc ? 1 : -1)
+  })
+}
 
 function mapsUrl(location) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`
@@ -34,6 +64,9 @@ export default function UpcomingPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sort, setSort] = useState(() =>
+    loadSort(SORT_STORAGE_KEY, SORT_OPTIONS.map((option) => option.key), DEFAULT_SORT)
+  )
 
   const load = useCallback(() => fetchUpcomingSites(), [])
 
@@ -65,9 +98,22 @@ export default function UpcomingPage() {
       name: site.name,
       location: site.location,
       phone: digitsOnly(site.phone),
+      completionDate: site.completionDate,
       visits: site.visits.length ? site.visits.map((v) => ({ date: v.date, alarm: v.alarm })) : [EMPTY_VISIT],
     })
     setModalMode(site)
+  }
+
+  function changeSortKey(key) {
+    const next = { ...sort, key }
+    setSort(next)
+    saveSort(SORT_STORAGE_KEY, next)
+  }
+
+  function toggleSortDirection() {
+    const next = { ...sort, asc: !sort.asc }
+    setSort(next)
+    saveSort(SORT_STORAGE_KEY, next)
   }
 
   function closeModal() {
@@ -99,6 +145,7 @@ export default function UpcomingPage() {
         name: form.name.trim(),
         location: form.location.trim(),
         phone: digitsOnly(form.phone),
+        completionDate: form.completionDate,
         visits: form.visits.filter((v) => v.date).map((v) => ({ date: v.date, alarm: v.alarm })),
       }
       if (modalMode === 'add') {
@@ -131,7 +178,26 @@ export default function UpcomingPage() {
 
   return (
     <div>
-      <h2 className="page-title">예정 현장</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">예정 현장</h2>
+        <div className="sort-control">
+          <select value={sort.key} onChange={(e) => changeSortKey(e.target.value)} aria-label="정렬 기준">
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}순
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn small"
+            onClick={toggleSortDirection}
+            aria-label={sort.asc ? '오름차순, 눌러서 내림차순' : '내림차순, 눌러서 오름차순'}
+          >
+            {sort.asc ? '▲' : '▼'}
+          </button>
+        </div>
+      </div>
 
       {error && (
         <p className="auth-message error" role="alert">
@@ -141,7 +207,7 @@ export default function UpcomingPage() {
 
       <div className="upcoming-list">
         {sites.length === 0 && <p className="text-secondary">등록된 예정현장이 없습니다.</p>}
-        {sites.map((site) => (
+        {sortSites(sites, sort).map((site) => (
           <div key={site.id} className="upcoming-card">
             <div className="upcoming-card-top">
               <b>{site.name}</b>
@@ -159,6 +225,7 @@ export default function UpcomingPage() {
                 </div>
               ))
             )}
+            {site.completionDate && <div className="text-secondary visit-line">준공일 {site.completionDate}</div>}
             {site.location && (
               <a className="upcoming-link" href={mapsUrl(site.location)} target="_blank" rel="noopener noreferrer">
                 {site.location} · 지도에서 보기
@@ -185,6 +252,13 @@ export default function UpcomingPage() {
 
           <label>위치</label>
           <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
+
+          <label>준공일</label>
+          <input
+            type="date"
+            value={form.completionDate}
+            onChange={(e) => setForm({ ...form, completionDate: e.target.value })}
+          />
 
           <label>방문 일자 (여러 개 등록 가능, 일자마다 알림 개별 설정)</label>
           <div className="visit-edit-list">

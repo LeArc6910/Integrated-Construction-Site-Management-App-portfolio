@@ -6,6 +6,7 @@ import {
   inLine,
   lineUnitCount,
   sharedFloorsOf,
+  unitNumber,
 } from './unitSheetLayout'
 
 // 세대표를 한 장짜리 가로 이미지로 그린다. 화면 표(DOM)를 캡처하지 않고 Canvas에 직접 그리는
@@ -52,11 +53,6 @@ function pad2(n) {
 
 export function todayString(date = new Date()) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
-}
-
-// 세대 번호: 17층 1호 → 1701
-function unitNumber(floor, lineNo) {
-  return `${floor}${pad2(lineNo)}`
 }
 
 // 완료 세대 = 메인 세대표에서 경량·합지가 둘 다 체크된 세대 (현장관리 목록의 완료 기준과 같다)
@@ -349,6 +345,24 @@ export function canShareFile(file) {
   return Boolean(navigator.canShare?.({ files: [file] }))
 }
 
+// iPadOS는 데스크톱 사파리인 척해서 userAgent만으로는 구분되지 않는다. 터치 지원 여부를 같이 본다.
+function isIOS() {
+  const ua = navigator.userAgent
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+}
+
+function triggerDownload(file) {
+  const url = URL.createObjectURL(file)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  return 'downloaded'
+}
+
 // 휴대폰에서는 공유 창의 "이미지 저장"으로 사진첩에 바로 저장하게 한다. 홈 화면에 추가한
 // iOS 앱에서는 다운로드 링크를 누르면 앱 안에 이미지가 열려 되돌아올 방법이 없어서다.
 // PC 브라우저는 일반 파일 다운로드로 받는다.
@@ -363,13 +377,12 @@ export async function saveImageFile(file) {
     }
   }
 
-  const url = URL.createObjectURL(file)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = file.name
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
-  return 'downloaded'
+  return triggerDownload(file)
+}
+
+// "다운로드"라고 적힌 버튼은 공유 창을 거치지 않고 파일로 바로 받게 한다.
+// 다만 iOS는 위 주석대로 앱 안에 이미지가 열려버려 되돌아올 수 없으므로 공유 창을 그대로 쓴다.
+export async function downloadImageFile(file) {
+  if (isIOS()) return saveImageFile(file)
+  return triggerDownload(file)
 }

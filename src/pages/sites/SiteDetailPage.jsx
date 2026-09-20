@@ -16,24 +16,50 @@ import {
   loadSiteSheet,
   reorderBuildings,
   resolveDefect,
+  saveSiteSections,
   setUnitChecks,
   updateBuilding,
 } from '../../api/unitSheet'
 import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
 import { enqueueWrite } from '../../lib/offlineQueue'
-import { canvasToFile, renderUnitSheetImage, saveImageFile, sheetImageFileName } from '../../lib/unitSheetImage'
+import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileName } from '../../lib/unitSheetImage'
 import BuildingEditModal from './BuildingEditModal'
 import CellPanel from './CellPanel'
 import ChecklistPanel from './ChecklistPanel'
 import DefectAddModal from './DefectAddModal'
+import SectionEditModal from './SectionEditModal'
 import SheetShareModal from './SheetShareModal'
 import UnitSheetTable from './UnitSheetTable'
 
 const ALL_BUILDINGS = '전체'
+const ALL_SECTIONS = '전체'
+// 공구를 지정하지 않은 동만 모아 보는 값. 공구 id(숫자)와 겹치지 않게 문자열을 쓴다.
+const UNASSIGNED_SECTION = '미지정'
 
 // 가로/세로 보기는 기기에 기억해두고 다음에 어느 현장을 열어도 같은 방향으로 보여준다
 const HORIZONTAL_STORAGE_KEY = 'unitSheetHorizontal'
+
+// 공구는 현장마다 구성이 달라서 현장별로 따로 기억한다
+function sectionStorageKey(siteId) {
+  return `unitSheetSection:${siteId}`
+}
+
+function loadSection(siteId) {
+  try {
+    return localStorage.getItem(sectionStorageKey(siteId)) ?? ALL_SECTIONS
+  } catch {
+    return ALL_SECTIONS
+  }
+}
+
+function saveSection(siteId, value) {
+  try {
+    localStorage.setItem(sectionStorageKey(siteId), value)
+  } catch {
+    // 저장소를 못 쓰는 환경(사생활 보호 모드 등)이면 이번 화면에서만 유지된다
+  }
+}
 
 function loadHorizontal() {
   try {
@@ -70,6 +96,7 @@ export default function SiteDetailPage() {
     ownerName: null,
     sharedWith: [],
     buildings: [],
+    sections: [],
     checks: {},
     defects: {},
     offline: false,
@@ -80,6 +107,7 @@ export default function SiteDetailPage() {
   const [notice, setNotice] = useState('')
 
   const [view, setView] = useState('sheet') // 'sheet' | 'checklist'
+  const [sectionFilter, setSectionFilter] = useState(() => loadSection(siteId))
   const [buildingFilter, setBuildingFilter] = useState(ALL_BUILDINGS)
   const [scale, setScale] = useState(1)
   const [horizontal, setHorizontal] = useState(loadHorizontal)
@@ -92,6 +120,7 @@ export default function SiteDetailPage() {
   const [selectedDefectId, setSelectedDefectId] = useState(null)
   const [defectModal, setDefectModal] = useState(false)
   const [buildingModal, setBuildingModal] = useState(false)
+  const [sectionModal, setSectionModal] = useState(false)
   const [shareModal, setShareModal] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -540,18 +569,42 @@ export default function SiteDetailPage() {
     }
   }
 
-  // 이미지 생성과 공유 호출을 기다림 없이 이어서 해야 iOS에서 공유 창이 막히지 않는다
+  // 안드로이드·PC는 파일로 바로 받고, iOS만 공유 창을 쓴다(downloadImageFile 주석 참고).
+  // 이미지 생성과 호출을 기다림 없이 이어서 해야 iOS에서 공유 창이 막히지 않는다.
   function handleDownloadSheet() {
     setError('')
     setNotice('')
     try {
       const siteName = sheet.site?.name ?? '현장'
-      const title = buildingFilter === ALL_BUILDINGS ? siteName : `${siteName} ${buildingFilter}`
+      // 지금 화면에 보이는 범위를 제목에도 그대로 적는다 (예: "수원 LH SY 1공구 101동")
+      const scope = [sectionLabel, buildingInSection ? buildingFilter : ''].filter(Boolean).join(' ')
+      const title = scope ? `${siteName} ${scope}` : siteName
       const canvas = renderUnitSheetImage({ title, buildings: visibleBuildings, checks: sheet.checks })
       const file = canvasToFile(canvas, sheetImageFileName(title))
-      saveImageFile(file).catch((err) => setError(err.message))
+      downloadImageFile(file).catch((err) => setError(err.message))
     } catch (err) {
       setError(`세대표 이미지를 만들지 못했습니다: ${err.message}`)
+    }
+  }
+
+  // 공구를 바꾸면 그 공구에 없는 동이 걸려 있을 수 있어 동 선택은 전체로 되돌린다
+  function changeSection(value) {
+    setSectionFilter(value)
+    saveSection(siteId, value)
+    setBuildingFilter(ALL_BUILDINGS)
+  }
+
+  async function handleSaveSections({ sections, removedIds, assignments }) {
+    setSaving(true)
+    setError('')
+    try {
+      await saveSiteSections({ siteId: sheetOwner, sections, removedIds, assignments })
+      setSectionModal(false)
+      await reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -561,10 +614,35 @@ export default function SiteDetailPage() {
     saveHorizontal(next)
   }
 
+  // 기억해둔 공구가 사라졌으면(다른 사람이 지웠거나 예전 현장의 값이면) 전체로 되돌린다
+  const sectionExists =
+    sectionFilter === ALL_SECTIONS ||
+    (sectionFilter === UNASSIGNED_SECTION && sheet.buildings.some((building) => building.sectionId == null)) ||
+    sheet.sections.some((section) => String(section.id) === String(sectionFilter))
+  const activeSection = sectionExists ? sectionFilter : ALL_SECTIONS
+
+  const sectionBuildings = sheet.buildings.filter((building) => {
+    if (activeSection === ALL_SECTIONS) return true
+    if (activeSection === UNASSIGNED_SECTION) return building.sectionId == null
+    return String(building.sectionId) === String(activeSection)
+  })
+
+  // 공구를 바꾸면 동 선택은 전체로 돌아가지만, 새로고침 등으로 지금 공구에 없는 동이 남아 있으면
+  // 표가 통째로 비어 보인다. 그럴 때도 그 공구의 동을 다 보여준다.
+  const buildingInSection = sectionBuildings.some((building) => building.name === buildingFilter)
   const visibleBuildings =
-    buildingFilter === ALL_BUILDINGS
-      ? sheet.buildings
-      : sheet.buildings.filter((building) => building.name === buildingFilter)
+    buildingFilter === ALL_BUILDINGS || !buildingInSection
+      ? sectionBuildings
+      : sectionBuildings.filter((building) => building.name === buildingFilter)
+
+  const sectionLabel =
+    activeSection === ALL_SECTIONS
+      ? ''
+      : activeSection === UNASSIGNED_SECTION
+        ? UNASSIGNED_SECTION
+        : (sheet.sections.find((section) => String(section.id) === String(activeSection))?.name ?? '')
+
+  const hasUnassigned = sheet.buildings.some((building) => building.sectionId == null)
 
   const currentDefects = panel ? (sheet.defects[cellKey(panel.buildingId, panel.lineNo, panel.floor)] ?? []) : []
 
@@ -614,9 +692,25 @@ export default function SiteDetailPage() {
       ) : (
         <>
       <div className="toolbar">
-        <select value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
-          <option value={ALL_BUILDINGS}>{ALL_BUILDINGS}</option>
-          {sheet.buildings.map((building) => (
+        {/* 공구를 쓰지 않는 현장에서는 공구 선택을 띄우지 않는다 */}
+        {(sheet.sections.length > 0 || activeSection !== ALL_SECTIONS) && (
+          <select value={activeSection} onChange={(e) => changeSection(e.target.value)} aria-label="공구 선택">
+            <option value={ALL_SECTIONS}>공구 {ALL_SECTIONS}</option>
+            {sheet.sections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+            {hasUnassigned && <option value={UNASSIGNED_SECTION}>{UNASSIGNED_SECTION}</option>}
+          </select>
+        )}
+        <select
+          value={buildingInSection ? buildingFilter : ALL_BUILDINGS}
+          onChange={(e) => setBuildingFilter(e.target.value)}
+          aria-label="동 선택"
+        >
+          <option value={ALL_BUILDINGS}>동 {ALL_BUILDINGS}</option>
+          {sectionBuildings.map((building) => (
             <option key={building.id} value={building.name}>
               {building.name}
             </option>
@@ -706,6 +800,9 @@ export default function SiteDetailPage() {
             <button type="button" className="btn" onClick={() => setBuildingModal(true)}>
               세대표 수정
             </button>
+            <button type="button" className="btn" onClick={() => setSectionModal(true)}>
+              공구 수정
+            </button>
             <button type="button" className="btn" disabled={sheet.offline} onClick={() => setShareModal(true)}>
               세대표 공유
             </button>
@@ -752,6 +849,15 @@ export default function SiteDetailPage() {
           onSubmit={handleSaveBuilding}
           onDelete={handleDeleteBuilding}
           onReorder={handleReorderBuildings}
+        />
+      )}
+      {sectionModal && (
+        <SectionEditModal
+          buildings={sheet.buildings}
+          sections={sheet.sections}
+          saving={saving}
+          onClose={() => setSectionModal(false)}
+          onSubmit={handleSaveSections}
         />
       )}
       {shareModal && (

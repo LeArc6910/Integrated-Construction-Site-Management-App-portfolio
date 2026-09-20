@@ -5,6 +5,11 @@ export function lineRange(line) {
   return { min: line.min_floor ?? 1, max: line.max_floor }
 }
 
+// 세대 번호: 17층 1호 → 1701. 화면 표와 이미지가 같은 번호를 쓰도록 여기에 둔다.
+export function unitNumber(floor, lineNo) {
+  return `${floor}${String(lineNo).padStart(2, '0')}`
+}
+
 export function inLine(line, floor) {
   const { min, max } = lineRange(line)
   return floor >= min && floor <= max

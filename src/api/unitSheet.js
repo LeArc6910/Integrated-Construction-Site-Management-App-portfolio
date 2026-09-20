@@ -36,7 +36,7 @@ export async function fetchSiteSheet({ siteId }) {
   // building_id로 저장되므로 원본의 동을 읽는 것만으로 데이터가 함께 공유된다.
   const ownerId = sheetOwnerId(siteRes.data)
 
-  const [groupRes, buildingsRes] = await Promise.all([
+  const [groupRes, buildingsRes, sectionsRes] = await Promise.all([
     supabase
       .from('sites')
       .select('id, name')
@@ -45,12 +45,15 @@ export async function fetchSiteSheet({ siteId }) {
       .order('name'),
     supabase
       .from('buildings')
-      .select('id, name, building_lines(line_no, min_floor, max_floor, unit_type, core_label)')
+      .select('id, name, section_id, building_lines(line_no, min_floor, max_floor, unit_type, core_label)')
       .eq('site_id', ownerId)
       .order('sort_order'),
+    // 공구도 동과 함께 원본 현장에 달려 있다
+    supabase.from('site_sections').select('id, name').eq('site_id', ownerId).order('sort_order'),
   ])
   if (groupRes.error) throw groupRes.error
   if (buildingsRes.error) throw buildingsRes.error
+  if (sectionsRes.error) throw sectionsRes.error
 
   const site = { id: siteRes.data.id, name: siteRes.data.name }
   const sharedWith = groupRes.data.filter((row) => row.id !== site.id).map((row) => row.name)
@@ -59,12 +62,14 @@ export async function fetchSiteSheet({ siteId }) {
   const buildings = buildingsRes.data.map((building) => ({
     id: building.id,
     name: building.name,
+    sectionId: building.section_id ?? null,
     lines: [...building.building_lines].sort((a, b) => a.line_no - b.line_no).map(normalizeLine),
   }))
+  const sections = sectionsRes.data
 
   const buildingIds = buildings.map((building) => building.id)
   if (buildingIds.length === 0) {
-    return { site, ownerId, ownerName, sharedWith, buildings, checks: {}, defects: {} }
+    return { site, ownerId, ownerName, sharedWith, buildings, sections, checks: {}, defects: {} }
   }
 
   // 큰 현장은 체크 행이 몇천 건이 될 수 있어 range로 나눠 끝까지 읽는다(PostgREST
@@ -96,7 +101,7 @@ export async function fetchSiteSheet({ siteId }) {
     defects[key].push(row)
   })
 
-  return { site, ownerId, ownerName, sharedWith, buildings, checks, defects }
+  return { site, ownerId, ownerName, sharedWith, buildings, sections, checks, defects }
 }
 
 async function cacheSiteSheet(siteId, data) {
@@ -304,6 +309,51 @@ export async function createBuilding({ siteId, name, lines }) {
 export async function reorderBuildings({ orderedIds }) {
   const results = await Promise.all(
     orderedIds.map((id, index) => supabase.from('buildings').update({ sort_order: index }).eq('id', id))
+  )
+  const failed = results.find((r) => r.error)
+  if (failed) throw failed.error
+}
+
+// 공구 수정 화면에서 한 번에 저장한다. 공구 목록(추가·이름변경·삭제)과 동별 공구 지정이
+// 따로 놀면 방금 만든 공구에 동을 넣지 못하므로, 공구를 먼저 반영하고 동을 나중에 지정한다.
+// sections: [{ id, name }] — id가 null이면 새로 만드는 공구다. removedIds에 없는 기존 공구만 남는다.
+// assignments: { [buildingId]: sectionId | null | '새 공구의 임시 키' }
+export async function saveSiteSections({ siteId, sections, removedIds, assignments }) {
+  if (removedIds.length > 0) {
+    // 지운 공구에 속해 있던 동은 section_id가 null이 되어 "미지정"으로 돌아간다
+    const { error } = await supabase.from('site_sections').delete().in('id', removedIds)
+    if (error) throw error
+  }
+
+  // 새 공구의 임시 키를 실제 id로 바꿔줄 대응표
+  const idByTempKey = {}
+
+  for (const [index, section] of sections.entries()) {
+    if (section.id) {
+      const { error } = await supabase
+        .from('site_sections')
+        .update({ name: section.name, sort_order: index })
+        .eq('id', section.id)
+      if (error) throw error
+      continue
+    }
+
+    const { data, error } = await supabase
+      .from('site_sections')
+      .insert({ site_id: siteId, name: section.name, sort_order: index })
+      .select('id')
+      .single()
+    if (error) throw error
+    idByTempKey[section.tempKey] = data.id
+  }
+
+  const results = await Promise.all(
+    Object.entries(assignments).map(([buildingId, sectionId]) =>
+      supabase
+        .from('buildings')
+        .update({ section_id: idByTempKey[sectionId] ?? (sectionId || null) })
+        .eq('id', buildingId)
+    )
   )
   const failed = results.find((r) => r.error)
   if (failed) throw failed.error
