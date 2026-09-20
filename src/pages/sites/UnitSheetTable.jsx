@@ -7,6 +7,7 @@ import {
   hasCoreInfo,
   inLine,
   sharedFloorsOf,
+  unitNumber,
 } from '../../lib/unitSheetLayout'
 
 // 경량은 왼쪽 절반, 합지는 오른쪽 절반을 칠해서 한 칸에 두 작업을 같이 보여준다.
@@ -189,6 +190,8 @@ export default function UnitSheetTable({
                         if (plaster?.light || plaster?.laminate) classNames.push('plaster-marked')
                       }
 
+                      // 칠해진 칸은 세대 번호를 진하게 해서 색 위에서도 읽히게 한다
+                      if (style) classNames.push('checked')
                       if (inRect(drag, building.id, line.line_no, floor)) classNames.push('selecting')
 
                       return (
@@ -203,7 +206,9 @@ export default function UnitSheetTable({
                           onPointerUp={handlePointerUp}
                           onPointerCancel={handlePointerUp}
                           onClick={() => !dragMode && onCellClick(building, line.line_no, floor)}
-                        />
+                        >
+                          <span className="unit-no">{unitNumber(floor, line.line_no)}</span>
+                        </td>
                       )
                     })}
                   </tr>
