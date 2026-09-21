@@ -3,8 +3,9 @@ import { IconPaperclip } from '@tabler/icons-react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchMonthAttendance } from '../../api/attendance'
 import { fetchMonthExpenses, getReceiptUrl } from '../../api/expense'
-import { afterWithholding, fetchLaborDetail, rateForMonth } from '../../api/payment'
+import { fetchLaborDetail, rateForMonth, salaryGap } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
+import GrossNote from '../../components/GrossNote'
 import { usePeriod } from '../../hooks/usePeriod'
 import { buildCells, DOW, ymd } from '../../lib/calendar'
 import { formatDays, formatWon } from '../../lib/format'
@@ -77,8 +78,10 @@ export default function PaymentLaborDetailPage() {
     .reduce((sum, rec) => sum + rec.hours, 0)
   const monthRate = detail ? rateForMonth(detail.rateHistory, year, month) : 0
   const monthSalary = monthDays * monthRate
-  const monthActual = detail?.salaries?.find((s) => s.year === year && s.month === month)?.amount ?? 0
-  const monthGap = afterWithholding(monthSalary - monthActual)
+  const monthEntry = detail?.salaries?.find((s) => s.year === year && s.month === month)
+  const monthActual = monthEntry?.amount ?? 0
+  const monthGross = monthEntry?.gross ?? 0
+  const monthGap = salaryGap({ salary: monthSalary, gross: monthGross })
   const monthExpenseTotal = monthExpenses.reduce((sum, e) => sum + e.amount, 0)
 
   return (
@@ -114,6 +117,13 @@ export default function PaymentLaborDetailPage() {
                 {year}년 {month}월 급여
               </div>
               <div className="value">{formatWon(monthSalary)}</div>
+            </div>
+            <div className="metric-card">
+              <div className="label">
+                {year}년 {month}월 실급여
+              </div>
+              <div className="value">{formatWon(monthActual)}</div>
+              <GrossNote gross={monthGross} />
             </div>
             <div className="metric-card">
               <div className="label">
@@ -184,7 +194,10 @@ export default function PaymentLaborDetailPage() {
                     {salary.year}년 {salary.month}월
                   </span>
                   <span className="mono">{formatWon(salary.salary)}</span>
-                  <span className="mono">{formatWon(salary.amount)}</span>
+                  <span className="mono">
+                    {formatWon(salary.amount)}
+                    <GrossNote gross={salary.gross} />
+                  </span>
                   <span className="mono">{formatWon(salary.gap)}</span>
                   <span className="text-secondary">{openKey === salary.key ? '접기' : `${salary.entries.length}건`}</span>
                 </div>
@@ -192,8 +205,16 @@ export default function PaymentLaborDetailPage() {
                   <div className="expand-list">
                     {salary.entries.map((entry) => (
                       <div key={entry.id} className="expand-item salary-detail-row">
-                        <span>{entry.siteName ?? '현장 미지정(이전 입력)'}</span>
-                        <span className="mono">{formatWon(entry.amount)}</span>
+                        <span>
+                          {entry.siteName ?? '현장 미지정(이전 입력)'}
+                          <div className="gross-note">
+                            {formatDays(entry.days)} · {entry.percent}% 제외
+                          </div>
+                        </span>
+                        <span className="mono">
+                          {formatWon(entry.amount)}
+                          <GrossNote gross={entry.gross} />
+                        </span>
                         <span>
                           {entry.receiptPath ? (
                             <button

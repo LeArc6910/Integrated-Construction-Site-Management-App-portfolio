@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchMonthAttendance } from '../../api/attendance'
 import { fetchMonthExpenses } from '../../api/expense'
-import { afterWithholding, effectiveRate } from '../../api/payment'
-import { fetchActualSalary, fetchRateHistory } from '../../api/salary'
+import { effectiveRate, salaryGap } from '../../api/payment'
+import { fetchRateHistory } from '../../api/salary'
+import { fetchSalaryTotalsForUser } from '../../api/salaryTax'
 import CalendarNav from '../../components/CalendarNav'
+import GrossNote from '../../components/GrossNote'
 import { useAuth } from '../../hooks/useAuth'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatDays, formatWon } from '../../lib/format'
@@ -14,20 +16,22 @@ export default function DashboardTab() {
   const [attendance, setAttendance] = useState({})
   const [expenseTotal, setExpenseTotal] = useState(0)
   const [actual, setActual] = useState(null)
+  const [gross, setGross] = useState(0)
   const [rateHistory, setRateHistory] = useState([])
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    const [attendanceMap, expenses, actualAmount, history] = await Promise.all([
+    const [attendanceMap, expenses, salaryTotals, history] = await Promise.all([
       fetchMonthAttendance({ userId: user.id, year, month }),
       fetchMonthExpenses({ userId: user.id, year, month }),
-      fetchActualSalary({ userId: user.id, year, month }),
+      fetchSalaryTotalsForUser({ userId: user.id, year, month }),
       fetchRateHistory({ userId: user.id }),
     ])
     return {
       attendanceMap,
       expenseTotal: expenses.reduce((sum, e) => sum + e.amount, 0),
-      actualAmount,
+      actualAmount: salaryTotals.actual,
+      grossAmount: salaryTotals.gross,
       history,
     }
   }, [user.id, year, month])
@@ -40,6 +44,7 @@ export default function DashboardTab() {
         setAttendance(result.attendanceMap)
         setExpenseTotal(result.expenseTotal)
         setActual(result.actualAmount)
+        setGross(result.grossAmount)
         setRateHistory(result.history)
       })
       .catch((err) => !ignore && setError(err.message))
@@ -59,9 +64,10 @@ export default function DashboardTab() {
     bySite[r.siteName] = (bySite[r.siteName] ?? 0) + r.hours
   })
 
-  // 인건비 탭과 같은 기준: 급여 = 출근일수 × 그 달 유효 단가, 차액 = (급여 − 실급여)에서 3.3% 공제
+  // 인건비 탭과 같은 기준: 급여 = 출근일수 × 그 달 유효 단가,
+  // 차액 = (급여 − 실급여 제외 전 금액)에서 3.3% 공제
   const salary = totalDays * effectiveRate(rateHistory, user.id, year, month)
-  const gap = afterWithholding(salary - (actual ?? 0))
+  const gap = salaryGap({ salary, gross })
 
   return (
     <div>
@@ -89,6 +95,7 @@ export default function DashboardTab() {
         <div className="metric-card">
           <div className="label">실급여</div>
           <div className="value">{actual === null ? '미입력' : formatWon(actual)}</div>
+          <GrossNote gross={gross} />
         </div>
         <div className="metric-card">
           <div className="label">차액 (3.3% 공제)</div>
@@ -96,7 +103,9 @@ export default function DashboardTab() {
         </div>
       </div>
       <p className="text-secondary dashboard-note">
-        급여 = 출근일수 × 그 달 단가 · 실급여 = 급여 메뉴에 입력한 합계 · 차액 = (급여 − 실급여) × 96.7%
+        급여 = 출근일수 × 그 달 단가 · 실급여 = 급여 메뉴에 입력한 합계 · 차액 = (급여 − 실급여 제외 전 금액) × 96.7%
+        <br />
+        제외 전 금액 = 받은 실급여에서 빠진 세금을 되돌린 금액(현장별 설정, 기본 7일 이하 3.3% / 초과 9.6%)
       </p>
 
       <span className="section-label">현장별 출근일수</span>

@@ -11,7 +11,9 @@ import {
 } from '../../lib/unitSheetLayout'
 
 // 경량은 왼쪽 절반, 합지는 오른쪽 절반을 칠해서 한 칸에 두 작업을 같이 보여준다.
-function checkBackground(check) {
+// CRC 현장은 작업이 하나뿐이라 칸 전체를 한 색으로 칠한다.
+function checkBackground(check, crc) {
+  if (crc) return check?.light ? { background: 'var(--crc-bg)' } : undefined
   if (!check?.light && !check?.laminate) return undefined
   const left = check.light ? 'var(--orange-bg)' : '#fff'
   const right = check.laminate ? 'var(--teal-bg)' : '#fff'
@@ -89,6 +91,7 @@ export default function UnitSheetTable({
   dragMode,
   scale,
   horizontal,
+  crc = false,
   onCellClick,
   onCellsCheck,
 }) {
@@ -176,7 +179,7 @@ export default function UnitSheetTable({
                       let style
 
                       if (sheetView === 'plaster') {
-                        style = checkBackground(check)
+                        style = checkBackground(check, crc)
                       } else {
                         const unresolved = (defects[cellKey(building.id, line.line_no, floor)] ?? []).filter(
                           (defect) => !defect.resolved
@@ -184,7 +187,7 @@ export default function UnitSheetTable({
                         if (defectMode) {
                           if (unresolved.length) classNames.push('defect')
                         } else {
-                          style = checkBackground(check)
+                          style = checkBackground(check, crc)
                         }
                         const plaster = checks[checkKey(building.id, line.line_no, floor, 'plaster')]
                         if (plaster?.light || plaster?.laminate) classNames.push('plaster-marked')

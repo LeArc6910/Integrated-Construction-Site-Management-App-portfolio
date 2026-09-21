@@ -17,6 +17,9 @@
   --orange-bg: #fbe8d6;
   --red: #b94a3d;
   --red-bg: #f7e3e0;
+  /* CRC 현장은 작업이 하나뿐이라 칸 전체를 이 색으로 칠한다(경량·합지와 구분되는 파랑) */
+  --crc: #3f6bb5;
+  --crc-bg: #dfe8f8;
   --mono: 'SFMono-Regular', Consolas, monospace;
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard', 'Malgun Gothic', sans-serif;
@@ -666,6 +669,81 @@ input[type='date'] {
   grid-template-columns: 1.6fr 1fr 0.8fr;
 }
 
+/* 인건비 표를 펼쳤을 때 보이는 실급여 입력 건: 현장 · 출근일수와 적용 % · 받은 금액 · 제외 전 금액 */
+.labor-entry-row {
+  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+}
+
+/* 실급여 밑에 붙는 "(제외 전 금액)" */
+.gross-note {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 인건비 표에서 이름만 상세로 이동하는 버튼(나머지 칸은 펼치기) */
+.row-name {
+  justify-self: start;
+  padding: 0;
+  font-size: 13px;
+  text-align: left;
+}
+
+.tax-modal-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tax-table {
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* 현장 이름이 길어서 한 줄에 다 넣으면 입력칸이 눌린다. 이름을 위에 따로 두고
+   입력칸 셋을 그 아래 한 줄로 놓아 좁은 화면(320px)에서도 값이 보이게 한다. */
+.tax-row {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.tax-row:first-child {
+  border-top: none;
+}
+
+.tax-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.tax-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.tax-field {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* .modal-box input(width:100%, margin 있음)보다 구체성이 높아야 칸 안에 들어간다 */
+.modal-box .tax-field input {
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
 .pay-expense-row {
   grid-template-columns: 1fr 1fr;
 }
@@ -727,6 +805,10 @@ input[type='date'] {
   max-width: 100%;
   max-height: 80vh;
   overflow: auto;
+}
+
+.modal-box.wide {
+  width: 420px;
 }
 
 .modal-header {

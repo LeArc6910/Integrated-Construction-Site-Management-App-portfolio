@@ -10,6 +10,7 @@ import {
   updateContractAmount,
 } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
+import GrossNote from '../../components/GrossNote'
 import Modal from '../../components/Modal'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatDays, formatWon } from '../../lib/format'
@@ -231,7 +232,10 @@ export default function PaymentSiteDetailPage() {
                 <span>{row.name}</span>
                 <span>{formatDays(row.days)}</span>
                 <span className="mono">{formatWon(row.salary)}</span>
-                <span className="mono">{formatWon(row.actual)}</span>
+                <span className="mono">
+                  {formatWon(row.actual)}
+                  <GrossNote gross={row.gross} />
+                </span>
                 <span className="mono">{formatWon(row.gap)}</span>
                 <button type="button" className="link-btn" onClick={() => handleRemoveMember(row.userId)}>
                   제외

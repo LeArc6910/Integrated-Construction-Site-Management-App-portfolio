@@ -1,4 +1,5 @@
 import { checkKey } from '../api/unitSheet'
+import { isUnitDone } from './siteMode'
 import {
   buildingSummary,
   coreGroups,
@@ -25,6 +26,8 @@ const COLORS = {
   // 카카오톡으로 보내면 압축되면서 옅은 색이 날아가서, 화면보다 조금 진한 색을 쓴다
   light: '#f5b77a',
   laminate: '#7fd3b8',
+  // CRC 현장은 칸을 반으로 나누지 않고 전체를 칠해서 경량·합지와 한눈에 구분된다
+  crc: '#9db8e8',
   highlight: '#e02424',
 }
 
@@ -55,8 +58,9 @@ export function todayString(date = new Date()) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
 }
 
-// 완료 세대 = 메인 세대표에서 경량·합지가 둘 다 체크된 세대 (현장관리 목록의 완료 기준과 같다)
-export function countCompletion(buildings, checks) {
+// 완료 세대 = 메인 세대표에서 경량·합지가 둘 다 체크된 세대 (현장관리 목록의 완료 기준과 같다).
+// CRC 현장은 CRC 하나만 체크하면 완료다.
+export function countCompletion(buildings, checks, crc = false) {
   let total = 0
   let completed = 0
   buildings.forEach((building) => {
@@ -64,7 +68,7 @@ export function countCompletion(buildings, checks) {
       total += lineUnitCount(line)
       for (let floor = line.min_floor ?? 1; floor <= line.max_floor; floor++) {
         const check = checks[checkKey(building.id, line.line_no, floor, 'main')]
-        if (check?.light && check?.laminate) completed += 1
+        if (isUnitDone(check, crc)) completed += 1
       }
     })
   })
@@ -103,11 +107,13 @@ function centerText(ctx, text, x, y, w, h, { size = 11, weight = 400, color = CO
   ctx.fillText(text, x + w / 2, y + h / 2, Math.max(4, w - 4))
 }
 
-function drawLegend(ctx, rightX, y, withHighlight) {
-  const items = [
-    { label: '경량', draw: (x, sy) => fillSwatch(ctx, x, sy, COLORS.light) },
-    { label: '합지', draw: (x, sy) => fillSwatch(ctx, x, sy, COLORS.laminate) },
-  ]
+function drawLegend(ctx, rightX, y, withHighlight, crc) {
+  const items = crc
+    ? [{ label: 'CRC', draw: (x, sy) => fillSwatch(ctx, x, sy, COLORS.crc) }]
+    : [
+        { label: '경량', draw: (x, sy) => fillSwatch(ctx, x, sy, COLORS.light) },
+        { label: '합지', draw: (x, sy) => fillSwatch(ctx, x, sy, COLORS.laminate) },
+      ]
   if (withHighlight) {
     items.push({
       label: '금일 작업',
@@ -146,12 +152,13 @@ function fillSwatch(ctx, x, y, color) {
 }
 
 // buildings: 세대표 동 목록, checks: loadSiteSheet가 돌려주는 체크 맵
-// highlightKeys: 빨간 테두리로 강조할 세대 cellKey(building-line-floor) 집합 (작업보고 미리보기용)
-export function renderUnitSheetImage({ title, buildings, checks, highlightKeys = null, date = new Date() }) {
+// highlightKeys: 빨간 테두리로 강조할 세대 cellKey(building-line-floor) 집합 (작업보고용)
+// crc: CRC 현장이면 칸 전체를 한 색으로 칠하고 CRC 하나로 완료를 센다
+export function renderUnitSheetImage({ title, buildings, checks, highlightKeys = null, crc = false, date = new Date() }) {
   const drawable = buildings.filter((building) => building.lines.length > 0)
   const floors = sharedFloorsOf(drawable)
   const withCore = drawable.some(hasCoreInfo)
-  const { total, completed } = countCompletion(drawable, checks)
+  const { total, completed } = countCompletion(drawable, checks, crc)
 
   const widths = drawable.map((building) => FLOOR_W + building.lines.length * CELL_W)
   const contentWidth = widths.reduce((sum, w) => sum + w, 0) + Math.max(0, drawable.length - 1) * BUILDING_GAP
@@ -185,9 +192,10 @@ export function renderUnitSheetImage({ title, buildings, checks, highlightKeys =
   ctx.fillText(`완료 ${completed} / 전체 ${total}세대 (${percent}%)`, PAD, PAD + 54)
   ctx.fillStyle = COLORS.sub
   ctx.font = `400 12px ${FONT}`
-  ctx.fillText(`${todayString(date)} 기준 · 완료 = 경량·합지 모두 체크된 세대`, PAD, PAD + 76)
+  const doneRule = crc ? 'CRC 체크된 세대' : '경량·합지 모두 체크된 세대'
+  ctx.fillText(`${todayString(date)} 기준 · 완료 = ${doneRule}`, PAD, PAD + 76)
 
-  drawLegend(ctx, width - PAD, PAD + 8, Boolean(highlightKeys))
+  drawLegend(ctx, width - PAD, PAD + 8, Boolean(highlightKeys), crc)
 
   if (drawable.length === 0) {
     ctx.fillStyle = COLORS.sub
@@ -249,16 +257,24 @@ export function renderUnitSheetImage({ title, buildings, checks, highlightKeys =
         ctx.fillStyle = '#fff'
         ctx.fillRect(cx, y, CELL_W, CELL_H)
         const check = checks[checkKey(building.id, line.line_no, floor, 'main')]
-        if (check?.light) {
-          ctx.fillStyle = COLORS.light
-          ctx.fillRect(cx, y, CELL_W / 2, CELL_H)
-        }
-        if (check?.laminate) {
-          ctx.fillStyle = COLORS.laminate
-          ctx.fillRect(cx + CELL_W / 2, y, CELL_W / 2, CELL_H)
+        // CRC 현장은 반쪽으로 나누지 않고 칸 전체를 칠한다
+        if (crc) {
+          if (check?.light) {
+            ctx.fillStyle = COLORS.crc
+            ctx.fillRect(cx, y, CELL_W, CELL_H)
+          }
+        } else {
+          if (check?.light) {
+            ctx.fillStyle = COLORS.light
+            ctx.fillRect(cx, y, CELL_W / 2, CELL_H)
+          }
+          if (check?.laminate) {
+            ctx.fillStyle = COLORS.laminate
+            ctx.fillRect(cx + CELL_W / 2, y, CELL_W / 2, CELL_H)
+          }
         }
         strokeCell(ctx, cx, y, CELL_W, CELL_H)
-        const colored = check?.light || check?.laminate
+        const colored = crc ? Boolean(check?.light) : check?.light || check?.laminate
         centerText(ctx, unitNumber(floor, line.line_no), cx, y, CELL_W, CELL_H, {
           size: 10,
           color: colored ? COLORS.text : COLORS.unitNo,
