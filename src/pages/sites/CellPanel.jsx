@@ -49,6 +49,7 @@ export default function CellPanel({
   logs,
   names,
   selectedDefectId,
+  crc = false,
   onSelectDefect,
   onClose,
   onClearCheck,
@@ -112,12 +113,19 @@ export default function CellPanel({
         </>
       ) : (
         <>
-          <CheckRow label="경량" done={check?.light} by={actorLabel(names, check?.light_by, check?.light_at)} />
+          {/* CRC 현장은 CRC 한 줄만 보여준다(값은 경량과 같은 자리에 저장된다) */}
           <CheckRow
-            label="합지"
-            done={check?.laminate}
-            by={actorLabel(names, check?.laminate_by, check?.laminate_at)}
+            label={crc ? 'CRC' : '경량'}
+            done={check?.light}
+            by={actorLabel(names, check?.light_by, check?.light_at)}
           />
+          {!crc && (
+            <CheckRow
+              label="합지"
+              done={check?.laminate}
+              by={actorLabel(names, check?.laminate_by, check?.laminate_at)}
+            />
+          )}
           {sheetView === 'main' && (
             <div className="check-row">
               <span>미타공</span>

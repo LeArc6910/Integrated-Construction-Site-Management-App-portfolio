@@ -1,3 +1,4 @@
+import { isCrcSite, isUnitDone } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
 
 // 삭제된 현장은 archived_at에 보관 시각이 찍힌다. 목록은 항상 사용 중인 현장만 보여준다.
@@ -10,7 +11,7 @@ export async function fetchSites() {
 // 총 세대수/완료 세대수는 buildings·building_lines·unit_checks에 걸쳐 있어서, 몇 개 안
 // 되는 규모를 감안해 통째로 가져온 뒤 building_id로 묶어 집계한다. 세대표를 공유하는
 // 현장은 동이 원본(owner)에만 달려 있어 원본 기준으로 한 번만 계산한다.
-// sites는 { id, sheet_source_id }만 있으면 된다.
+// sites는 { id, name, sheet_source_id }만 있으면 된다(name은 CRC 현장 판정용).
 async function computeCompletion(sites) {
   const [buildingsRes, linesRes, checks] = await Promise.all([
     supabase.from('buildings').select('id, site_id'),
@@ -37,14 +38,22 @@ async function computeCompletion(sites) {
     totalByOwner[owner] = (totalByOwner[owner] ?? 0) + Math.max(0, line.max_floor - min + 1)
   })
 
+  // 완료 기준은 현장마다 다르다. CRC 현장은 CRC(light) 하나, 그 외는 경량·합지 둘 다.
+  // 세대표를 공유하면 동이 원본에 달려 있으므로 원본 현장 이름으로 판단한다.
+  const crcByOwner = {}
+  sites.forEach((site) => {
+    const owner = site.sheet_source_id ?? site.id
+    if (owner === site.id) crcByOwner[owner] = isCrcSite(site.name)
+  })
+
   // 층 범위를 좁히면 범위 밖 기록이 남아 있을 수 있다. 완료 수가 총 세대수를 넘지 않도록
   // 지금 세대표에 실제로 보이는 칸만 센다.
   const completedByOwner = {}
   checks.forEach((check) => {
-    if (!check.light || !check.laminate) return
     const range = rangeByLine[`${check.building_id}-${check.line_no}`]
     if (!range || check.floor < range.min || check.floor > range.max) return
     const owner = siteIdByBuilding[check.building_id]
+    if (!isUnitDone(check, crcByOwner[owner] ?? false)) return
     completedByOwner[owner] = (completedByOwner[owner] ?? 0) + 1
   })
 
@@ -53,7 +62,7 @@ async function computeCompletion(sites) {
 
 // 결제〉완료 현장 탭처럼 현장별 완료 상태만 필요한 곳에서 쓴다.
 export async function fetchSiteStatusMap() {
-  const sitesRes = await supabase.from('sites').select('id, sheet_source_id').is('archived_at', null)
+  const sitesRes = await supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null)
   if (sitesRes.error) throw sitesRes.error
 
   const { ownerBySite, totalByOwner, completedByOwner } = await computeCompletion(sitesRes.data)

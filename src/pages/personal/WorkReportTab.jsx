@@ -74,29 +74,27 @@ export default function WorkReportTab() {
   }, [siteId, sheets])
 
   const sheet = siteId ? sheets[siteId] : null
-  const autoText = site ? buildReportText({ site, userName: user.name }) : ''
+  const autoText = site ? buildReportText({ site, userName: user.name, buildings: sheet?.buildings }) : ''
   const text = siteId && texts[siteId] !== undefined ? texts[siteId] : autoText
 
-  // 미리보기(빨간 테두리)와 보낼 파일(테두리 없음)을 세대표를 받아온 시점에 미리 만들어 둔다.
-  // 보내기 버튼을 누른 뒤에 이미지를 그리면 그 사이 iOS가 공유 창 호출을 막을 수 있다.
+  // 미리보기와 보낼 파일을 세대표를 받아온 시점에 미리 만들어 둔다. 보내기 버튼을 누른 뒤에
+  // 이미지를 그리면 그 사이 iOS가 공유 창 호출을 막을 수 있다.
+  // 오늘 작업한 세대의 빨간 테두리는 보내는 이미지에도 그대로 들어간다(같은 캔버스를 쓴다).
   const images = useMemo(() => {
     if (!site || !sheet) return null
     try {
       const title = site.siteName
-      const previewCanvas = renderUnitSheetImage({
+      const canvas = renderUnitSheetImage({
         title,
         buildings: sheet.buildings,
         checks: sheet.checks,
         highlightKeys: highlightKeysOf(site),
+        crc: site.crc,
       })
-      const file = canvasToFile(
-        renderUnitSheetImage({ title, buildings: sheet.buildings, checks: sheet.checks }),
-        sheetImageFileName(title)
-      )
       return {
-        preview: previewCanvas.toDataURL('image/png'),
-        previewWidth: previewCanvas.logicalWidth,
-        file,
+        preview: canvas.toDataURL('image/png'),
+        previewWidth: canvas.logicalWidth,
+        file: canvasToFile(canvas, sheetImageFileName(title)),
         error: null,
       }
     } catch (err) {
@@ -161,7 +159,7 @@ export default function WorkReportTab() {
   return (
     <div>
       <p className="text-secondary" style={{ marginTop: 0 }}>
-        {todayString()} · 오늘 내가 처리한 경량·합지 체크, 미타공 등록/완료, 체크리스트 완료 내역입니다. 등록했다가
+        {todayString()} · 오늘 내가 처리한 작업 체크, 미타공 등록/완료, 체크리스트 완료 내역입니다. 등록했다가
         취소한 건은 포함되지 않습니다.
       </p>
 
@@ -192,7 +190,9 @@ export default function WorkReportTab() {
             </div>
           )}
 
-          <span className="section-label">세대표 (빨간 테두리 = 오늘 경량·합지 체크한 세대)</span>
+          <span className="section-label">
+            세대표 (빨간 테두리 = 오늘 {site.crc ? 'CRC' : '경량·합지'} 체크한 세대)
+          </span>
           <div className="report-preview">
             {!images && <p className="text-secondary">세대표를 불러오는 중…</p>}
             {images?.error && <p className="text-secondary">세대표 이미지를 만들지 못했습니다: {images.error}</p>}
@@ -200,7 +200,7 @@ export default function WorkReportTab() {
               <img src={images.preview} alt={`${site.siteName} 세대표`} style={{ width: images.previewWidth }} />
             )}
           </div>
-          <p className="text-secondary report-hint">카카오톡에는 빨간 테두리가 없는 세대표로 보내집니다.</p>
+          <p className="text-secondary report-hint">위에 보이는 그대로(빨간 테두리 포함) 보내집니다.</p>
 
           <div className="section-header">
             <span className="section-label">작업 내용</span>

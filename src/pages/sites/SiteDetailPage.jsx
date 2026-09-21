@@ -22,6 +22,7 @@ import {
 } from '../../api/unitSheet'
 import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
+import { isCrcOwner } from '../../lib/siteMode'
 import { enqueueWrite } from '../../lib/offlineQueue'
 import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileName } from '../../lib/unitSheetImage'
 import BuildingEditModal from './BuildingEditModal'
@@ -40,25 +41,37 @@ const UNASSIGNED_SECTION = '미지정'
 // 가로/세로 보기는 기기에 기억해두고 다음에 어느 현장을 열어도 같은 방향으로 보여준다
 const HORIZONTAL_STORAGE_KEY = 'unitSheetHorizontal'
 
-// 공구는 현장마다 구성이 달라서 현장별로 따로 기억한다
-function sectionStorageKey(siteId) {
-  return `unitSheetSection:${siteId}`
-}
-
-function loadSection(siteId) {
+// 공구·동은 현장마다 구성이 달라서 현장별로 따로 기억한다
+function loadFilter(prefix, siteId, fallback) {
   try {
-    return localStorage.getItem(sectionStorageKey(siteId)) ?? ALL_SECTIONS
+    return localStorage.getItem(`${prefix}:${siteId}`) ?? fallback
   } catch {
-    return ALL_SECTIONS
+    return fallback
   }
 }
 
-function saveSection(siteId, value) {
+function saveFilter(prefix, siteId, value) {
   try {
-    localStorage.setItem(sectionStorageKey(siteId), value)
+    localStorage.setItem(`${prefix}:${siteId}`, value)
   } catch {
     // 저장소를 못 쓰는 환경(사생활 보호 모드 등)이면 이번 화면에서만 유지된다
   }
+}
+
+function loadSection(siteId) {
+  return loadFilter('unitSheetSection', siteId, ALL_SECTIONS)
+}
+
+function saveSection(siteId, value) {
+  saveFilter('unitSheetSection', siteId, value)
+}
+
+function loadBuilding(siteId) {
+  return loadFilter('unitSheetBuilding', siteId, ALL_BUILDINGS)
+}
+
+function saveBuilding(siteId, value) {
+  saveFilter('unitSheetBuilding', siteId, value)
 }
 
 function loadHorizontal() {
@@ -108,7 +121,7 @@ export default function SiteDetailPage() {
 
   const [view, setView] = useState('sheet') // 'sheet' | 'checklist'
   const [sectionFilter, setSectionFilter] = useState(() => loadSection(siteId))
-  const [buildingFilter, setBuildingFilter] = useState(ALL_BUILDINGS)
+  const [buildingFilter, setBuildingFilter] = useState(() => loadBuilding(siteId))
   const [scale, setScale] = useState(1)
   const [horizontal, setHorizontal] = useState(loadHorizontal)
   const [sheetView, setSheetView] = useState('main') // 'main' | 'plaster'
@@ -125,6 +138,8 @@ export default function SiteDetailPage() {
   const [saving, setSaving] = useState(false)
 
   const sheetOwner = sheet.ownerId ?? siteId
+  // 세대표를 공유하면 체크도 원본과 함께 쓰므로 CRC 여부는 원본 현장 이름으로 정한다
+  const crc = isCrcOwner({ ownerName: sheet.ownerName, siteName: sheet.site?.name })
 
   const load = useCallback(() => loadSiteSheet({ siteId }), [siteId])
 
@@ -225,7 +240,8 @@ export default function SiteDetailPage() {
     // 칸이 섞여 있어도 한 방향으로만 칠해져서 결과를 예측할 수 있다.
     const anchorKey = checkKey(building.id, cells[0].lineNo, cells[0].floor, sheetView)
     const next = !sheet.checks[anchorKey]?.[field]
-    const action = `${field === 'light' ? '경량' : '합지'} 체크${next ? '' : ' 해제'}`
+    const workName = crc ? 'CRC' : field === 'light' ? '경량' : '합지'
+    const action = `${workName} 체크${next ? '' : ' 해제'}`
     const detail = sheetView === 'plaster' ? '석고 시공' : null
     const targets = cells.map((cell) => ({ buildingId: building.id, lineNo: cell.lineNo, floor: cell.floor }))
 
@@ -283,7 +299,8 @@ export default function SiteDetailPage() {
     setError('')
     setNotice('')
     const key = checkKey(panel.buildingId, panel.lineNo, panel.floor, sheetView)
-    const detail = sheetView === 'plaster' ? '석고 시공 · 경량/합지 해제' : '경량/합지 해제'
+    const cleared = crc ? 'CRC 해제' : '경량/합지 해제'
+    const detail = sheetView === 'plaster' ? `석고 시공 · ${cleared}` : cleared
 
     if (!navigator.onLine) {
       try {
@@ -516,7 +533,7 @@ export default function SiteDetailPage() {
         await createBuilding({ siteId: sheetOwner, name, lines })
       }
       setBuildingModal(false)
-      setBuildingFilter(name)
+      changeBuilding(name)
       await reload()
     } catch (err) {
       setError(err.message)
@@ -531,7 +548,7 @@ export default function SiteDetailPage() {
     try {
       await deleteBuilding({ buildingId })
       setBuildingModal(false)
-      setBuildingFilter(ALL_BUILDINGS)
+      changeBuilding(ALL_BUILDINGS)
       await reload()
     } catch (err) {
       setError(err.message)
@@ -579,7 +596,7 @@ export default function SiteDetailPage() {
       // 지금 화면에 보이는 범위를 제목에도 그대로 적는다 (예: "수원 LH SY 1공구 101동")
       const scope = [sectionLabel, buildingInSection ? buildingFilter : ''].filter(Boolean).join(' ')
       const title = scope ? `${siteName} ${scope}` : siteName
-      const canvas = renderUnitSheetImage({ title, buildings: visibleBuildings, checks: sheet.checks })
+      const canvas = renderUnitSheetImage({ title, buildings: visibleBuildings, checks: sheet.checks, crc })
       const file = canvasToFile(canvas, sheetImageFileName(title))
       downloadImageFile(file).catch((err) => setError(err.message))
     } catch (err) {
@@ -591,7 +608,18 @@ export default function SiteDetailPage() {
   function changeSection(value) {
     setSectionFilter(value)
     saveSection(siteId, value)
-    setBuildingFilter(ALL_BUILDINGS)
+    changeBuilding(ALL_BUILDINGS)
+  }
+
+  function changeBuilding(value) {
+    setBuildingFilter(value)
+    saveBuilding(siteId, value)
+  }
+
+  // CRC 현장은 고를 작업이 하나뿐이라 작업 체크를 누르면 바로 체크할 수 있게 해둔다
+  function startWorkMode() {
+    setBar('work')
+    if (crc) setWorkSub('light')
   }
 
   async function handleSaveSections({ sections, removedIds, assignments }) {
@@ -706,7 +734,7 @@ export default function SiteDetailPage() {
         )}
         <select
           value={buildingInSection ? buildingFilter : ALL_BUILDINGS}
-          onChange={(e) => setBuildingFilter(e.target.value)}
+          onChange={(e) => changeBuilding(e.target.value)}
           aria-label="동 선택"
         >
           <option value={ALL_BUILDINGS}>동 {ALL_BUILDINGS}</option>
@@ -740,6 +768,7 @@ export default function SiteDetailPage() {
         dragMode={bar === 'work' && workSub !== null}
         scale={scale}
         horizontal={horizontal}
+        crc={crc}
         onCellClick={handleCellClick}
         onCellsCheck={handleCellsCheck}
       />
@@ -747,20 +776,23 @@ export default function SiteDetailPage() {
       <div className="mode-bar">
         {bar === 'work' ? (
           <>
+            {/* CRC 현장은 작업이 하나뿐이라 CRC 버튼만 둔다(체크 값은 경량과 같은 자리에 저장) */}
             <button
               type="button"
               className={`btn${workSub === 'light' ? ' primary' : ''}`}
               onClick={() => setWorkSub('light')}
             >
-              경량
+              {crc ? 'CRC' : '경량'}
             </button>
-            <button
-              type="button"
-              className={`btn${workSub === 'laminate' ? ' primary' : ''}`}
-              onClick={() => setWorkSub('laminate')}
-            >
-              합지
-            </button>
+            {!crc && (
+              <button
+                type="button"
+                className={`btn${workSub === 'laminate' ? ' primary' : ''}`}
+                onClick={() => setWorkSub('laminate')}
+              >
+                합지
+              </button>
+            )}
             <button type="button" className="btn danger" onClick={cancelMode}>
               취소
             </button>
@@ -772,7 +804,7 @@ export default function SiteDetailPage() {
           </button>
         ) : sheetView === 'plaster' ? (
           <>
-            <button type="button" className="btn" onClick={() => setBar('work')}>
+            <button type="button" className="btn" onClick={startWorkMode}>
               작업 체크
             </button>
             <button type="button" className="btn" onClick={() => switchSheetView('main')}>
@@ -781,7 +813,7 @@ export default function SiteDetailPage() {
           </>
         ) : (
           <>
-            <button type="button" className="btn" onClick={() => setBar('work')}>
+            <button type="button" className="btn" onClick={startWorkMode}>
               작업 체크
             </button>
             <button
@@ -827,6 +859,7 @@ export default function SiteDetailPage() {
           logs={logs}
           names={names}
           selectedDefectId={selectedDefectId}
+          crc={crc}
           onSelectDefect={(id) => setSelectedDefectId((prev) => (prev === id ? null : id))}
           onClose={closePanel}
           onClearCheck={handleClearCheck}

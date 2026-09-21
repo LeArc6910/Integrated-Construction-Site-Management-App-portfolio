@@ -1,6 +1,6 @@
-import { fetchActualSalaryByUser } from './salary'
+import { DEFAULT_TAX, fetchSalaryTotalsByUser, fetchSiteTaxMap, grossUp, taxPercentFor } from './salaryTax'
 import { fetchSiteStatusMap } from './sites'
-import { supabase } from '../lib/supabase'
+import { fetchAllRows, supabase } from '../lib/supabase'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -26,6 +26,12 @@ function sumHoursByUser(rows) {
 // 차액은 실제 지급액과의 세전 비교가 아니라 기본공제(3.3%)를 뗀 실수령 기준으로 보여준다.
 export function afterWithholding(amount) {
   return Math.floor(amount * 0.967)
+}
+
+// 차액 = (급여 − 실급여 제외 전 금액) × 96.7%.
+// 실급여는 입력값 그대로가 아니라 세금 제외 전 금액으로 되돌린 뒤 뺀다(src/api/salaryTax.js).
+export function salaryGap({ salary, gross }) {
+  return afterWithholding(salary - gross)
 }
 
 // 단가를 수정해도 과거 달 급여 계산이 최신 단가로 바뀌지 않도록, 연/월별 이력
@@ -103,7 +109,7 @@ export async function fetchPaymentSiteDetail({ siteId, year, month }) {
     supabase.from('site_receipts').select('id, year, month, amount').eq('site_id', siteId).order('year').order('month'),
     supabase.from('site_members').select('user_id, profiles(name)').eq('site_id', siteId),
     supabase.from('attendances').select('user_id, hours').eq('site_id', siteId).gte('work_date', from).lte('work_date', to),
-    fetchActualSalaryByUser({ year, month, siteId: Number(siteId) }),
+    fetchSalaryTotalsByUser({ year, month, siteId: Number(siteId) }),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
   ])
 
@@ -117,14 +123,15 @@ export async function fetchPaymentSiteDetail({ siteId, year, month }) {
     .map((member) => {
       const days = daysByUser[member.user_id] ?? 0
       const salary = days * effectiveRate(rateHistoryRes.data, member.user_id, year, month)
-      const actual = actualByUser[member.user_id] ?? 0
+      const { actual, gross } = actualByUser[member.user_id] ?? { actual: 0, gross: 0 }
       return {
         userId: member.user_id,
         name: member.profiles.name,
         days,
         salary,
         actual,
-        gap: afterWithholding(salary - actual),
+        gross,
+        gap: salaryGap({ salary, gross }),
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -178,7 +185,7 @@ export async function fetchLaborList({ year, month }) {
   const [profilesRes, attendancesRes, actualByUser, rateHistoryRes] = await Promise.all([
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('attendances').select('user_id, hours').gte('work_date', from).lte('work_date', to),
-    fetchActualSalaryByUser({ year, month }),
+    fetchSalaryTotalsByUser({ year, month }),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
   ])
 
@@ -191,7 +198,7 @@ export async function fetchLaborList({ year, month }) {
     const days = daysByUser[profile.id] ?? 0
     const rate = effectiveRate(rateHistoryRes.data, profile.id, year, month)
     const salary = days * rate
-    const actual = actualByUser[profile.id] ?? 0
+    const { actual, gross, entries } = actualByUser[profile.id] ?? { actual: 0, gross: 0, entries: [] }
     return {
       userId: profile.id,
       name: profile.name,
@@ -199,7 +206,9 @@ export async function fetchLaborList({ year, month }) {
       days,
       salary,
       actual,
-      gap: afterWithholding(salary - actual),
+      gross,
+      entries,
+      gap: salaryGap({ salary, gross }),
     }
   })
 }
@@ -208,7 +217,7 @@ export async function fetchLaborList({ year, month }) {
 // 한 달에 현장별로 여러 건이 있을 수 있어 달 단위로 합치고, 입력 건(현장·금액·증빙)은 그 안에 담는다.
 // 각 줄에 그 달 급여와의 차액을 붙이려고 출근 기록을 통째로 가져와 월별로 묶는다.
 export async function fetchLaborDetail({ userId }) {
-  const [profileRes, entriesRes, attendancesRes, rateHistoryRes] = await Promise.all([
+  const [profileRes, entriesRes, attendancesRes, rateHistoryRes, taxBySite] = await Promise.all([
     supabase.from('profiles').select('name').eq('id', userId).single(),
     supabase
       .from('salary_entries')
@@ -217,17 +226,22 @@ export async function fetchLaborDetail({ userId }) {
       .order('year', { ascending: false })
       .order('month', { ascending: false })
       .order('created_at'),
-    supabase.from('attendances').select('work_date, hours').eq('user_id', userId),
+    // 세율은 그 현장에서 그 달에 일한 출근일수로 정해져서 현장까지 같이 읽는다
+    fetchAllRows(() => supabase.from('attendances').select('work_date, site_id, hours').eq('user_id', userId)),
     supabase.from('profile_rate_history').select('year, month, rate').eq('user_id', userId),
+    fetchSiteTaxMap(),
   ])
 
-  const error = profileRes.error || entriesRes.error || attendancesRes.error || rateHistoryRes.error
+  const error = profileRes.error || entriesRes.error || rateHistoryRes.error
   if (error) throw error
 
   const daysByMonth = {}
-  attendancesRes.data.forEach((row) => {
+  const daysBySiteMonth = {}
+  attendancesRes.forEach((row) => {
     const key = row.work_date.slice(0, 7) // 'YYYY-MM'
     daysByMonth[key] = (daysByMonth[key] ?? 0) + Number(row.hours)
+    const siteKey = `${row.site_id}:${key}`
+    daysBySiteMonth[siteKey] = (daysBySiteMonth[siteKey] ?? 0) + Number(row.hours)
   })
 
   const groups = []
@@ -235,14 +249,24 @@ export async function fetchLaborDetail({ userId }) {
   entriesRes.data.forEach((row) => {
     const key = `${row.year}-${pad2(row.month)}`
     if (!groupByKey[key]) {
-      groupByKey[key] = { key, year: row.year, month: row.month, amount: 0, entries: [] }
+      groupByKey[key] = { key, year: row.year, month: row.month, amount: 0, gross: 0, entries: [] }
       groups.push(groupByKey[key])
     }
-    groupByKey[key].amount += Number(row.amount)
+    const amount = Number(row.amount)
+    const days = daysBySiteMonth[`${row.site_id}:${key}`] ?? 0
+    const tax = taxBySite[row.site_id] ?? DEFAULT_TAX
+    const percent = taxPercentFor(days, tax)
+    const gross = grossUp(amount, percent)
+
+    groupByKey[key].amount += amount
+    groupByKey[key].gross += gross
     groupByKey[key].entries.push({
       id: row.id,
       siteName: row.sites?.name ?? null,
-      amount: Number(row.amount),
+      amount,
+      days,
+      percent,
+      gross,
       receiptPath: row.receipt_path,
     })
   })
@@ -252,7 +276,7 @@ export async function fetchLaborDetail({ userId }) {
   const salaries = groups.map((group) => {
     const days = daysByMonth[group.key] ?? 0
     const salary = days * rateAt(rateHistory, group.year, group.month)
-    return { ...group, days, salary, gap: afterWithholding(salary - group.amount) }
+    return { ...group, days, salary, gap: salaryGap({ salary, gross: group.gross }) }
   })
 
   return { name: profileRes.data.name, rateHistory, salaries }

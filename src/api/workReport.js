@@ -1,4 +1,6 @@
+import { isCrcSite } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
+import { inLine } from '../lib/unitSheetLayout'
 
 // 작업보고는 "오늘 내가 처리한 것"의 현재 상태만 모은다. 별도 기록 테이블을 두지 않는 이유:
 // 체크를 해제하면 light_at/laminate_at이 null이 되고, 미타공 등록을 취소하면 행이 지워지므로
@@ -21,10 +23,10 @@ function emptySite(siteId, siteName) {
   return {
     siteId,
     siteName,
+    // CRC 현장은 경량·합지가 아니라 CRC 하나로 체크한다(값은 light 자리에 저장된다)
+    crc: isCrcSite(siteName),
     light: [],
     laminate: [],
-    plasterLight: [],
-    plasterLaminate: [],
     defectsAdded: [],
     defectsResolved: [],
     checklist: [],
@@ -35,8 +37,6 @@ function hasWork(site) {
   return (
     site.light.length ||
     site.laminate.length ||
-    site.plasterLight.length ||
-    site.plasterLaminate.length ||
     site.defectsAdded.length ||
     site.defectsResolved.length ||
     site.checklist.length
@@ -122,18 +122,15 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
   }
 
   checkRows.forEach((row) => {
+    // 석고 시공 세대표의 체크는 작업보고에 넣지 않는다
+    if (row.sheet === 'plaster') return
     const unit = unitOf(row)
     if (!unit) return
     const site = siteOf(unit.siteId)
     const lightToday = row.light && row.light_by === userId && inRange(row.light_at, range)
     const laminateToday = row.laminate && row.laminate_by === userId && inRange(row.laminate_at, range)
-    if (row.sheet === 'plaster') {
-      if (lightToday) site.plasterLight.push(unit)
-      if (laminateToday) site.plasterLaminate.push(unit)
-    } else {
-      if (lightToday) site.light.push(unit)
-      if (laminateToday) site.laminate.push(unit)
-    }
+    if (lightToday) site.light.push(unit)
+    if (laminateToday) site.laminate.push(unit)
   })
 
   addedRes.data.forEach((row) => {
@@ -180,18 +177,114 @@ function sortUnits(units) {
   )
 }
 
-// "101동: 1701, 1702" 처럼 동별로 한 줄씩 묶는다
-function unitLines(units) {
-  const lines = []
-  let current = null
-  sortUnits(units).forEach((unit) => {
-    if (!current || current.buildingId !== unit.buildingId) {
-      current = { buildingId: unit.buildingId, name: unit.buildingName, numbers: [] }
-      lines.push(current)
+// 코어 이름이 숫자만 적혀 있으면("1") 뜻이 안 통하니 "1코어"로 붙여 쓴다
+function coreName(label) {
+  return /^\d+$/.test(label) ? `${label}코어` : label
+}
+
+// 한 동의 한 층에서 오늘 한 세대를 묶음 목록으로 바꾼다.
+// - 그 층의 세대를 전부 했으면 '전체' 하나
+// - 코어 정보가 있고 한 코어를 통째로 했으면 코어 이름으로 묶는다(코어가 우선)
+// - 나머지는 그 층에서 이웃한 호끼리 '1701~1702호'로 묶는다
+// available: 그 층에 실제로 있는 라인들(세대표를 못 받았으면 null → 전체/코어 판단 없이 호수만 묶는다)
+function floorTokens(worked, available) {
+  const covered = new Set()
+  const tokens = []
+
+  if (available) {
+    if (available.length === worked.length && available.every((line) => worked.includes(line.line_no))) {
+      return [{ kind: 'all', first: 0, sig: 'all' }]
     }
-    current.numbers.push(unitNo(unit))
+    const byCore = new Map()
+    available.forEach((line) => {
+      const label = line.core_label?.trim()
+      if (label) byCore.set(label, [...(byCore.get(label) ?? []), line.line_no])
+    })
+    byCore.forEach((numbers, label) => {
+      if (!numbers.every((n) => worked.includes(n))) return
+      numbers.forEach((n) => covered.add(n))
+      tokens.push({ kind: 'core', label, first: numbers[0], sig: `c:${label}` })
+    })
+  }
+
+  // 세대표의 라인 순서에서 바로 옆에 있는 라인끼리만 잇는다(코어로 빠진 라인은 사이에 끼면 끊긴다).
+  // 층 범위를 좁힌 뒤 남은 옛 체크처럼 지금 세대표에 없는 라인은 라인 번호 순서대로 뒤에 붙여,
+  // 그런 칸들끼리는 이어지되 세대표에 있는 라인과는 섞이지 않게 한다.
+  const order = available?.map((line) => line.line_no) ?? null
+  const position = (n) => {
+    if (!order) return n
+    const index = order.indexOf(n)
+    return index >= 0 ? index : order.length + n
+  }
+  let run = null
+  worked
+    .filter((n) => !covered.has(n))
+    .sort((a, b) => a - b)
+    .forEach((n) => {
+      if (run && position(n) === run.lastPosition + 1) {
+        run.end = n
+        run.lastPosition = position(n)
+        return
+      }
+      run = { kind: 'run', start: n, end: n, first: n, lastPosition: position(n) }
+      tokens.push(run)
+    })
+  tokens.forEach((token) => {
+    if (token.kind === 'run') token.sig = `l:${token.start}-${token.end}`
   })
-  return lines.map((line) => `· ${line.name}: ${line.numbers.join(', ')}`)
+
+  return tokens.sort((a, b) => a.first - b.first)
+}
+
+function renderToken(token, floor) {
+  if (token.kind === 'core') return coreName(token.label)
+  const { start, end } = token
+  if (floor !== null) {
+    return start === end ? `${unitNo({ floor, lineNo: start })}호` : `${unitNo({ floor, lineNo: start })}~${unitNo({ floor, lineNo: end })}호`
+  }
+  return start === end ? `${pad2(start)}호` : `${pad2(start)}~${pad2(end)}호`
+}
+
+// 층 묶음 하나를 글자로: "6~10층 1코어", "1~10층 전체", "1701~1702호"
+function renderFloorGroup(group) {
+  const single = group.startFloor === group.endFloor
+  const range = single ? `${group.startFloor}층` : `${group.startFloor}~${group.endFloor}층`
+  if (group.tokens[0]?.kind === 'all') return `${range} 전체`
+  const floor = single ? group.startFloor : null
+  const body = group.tokens.map((token) => renderToken(token, floor)).join(', ')
+  // 한 층이고 호수만 있으면 호수에 층이 들어 있어 "17층"을 또 쓰지 않는다
+  return single && group.tokens.every((token) => token.kind === 'run') ? body : `${range} ${body}`
+}
+
+// "101동: 6~10층 1코어 / 11층 1701~1702호" 처럼 동별로 한 줄씩 묶는다.
+// buildingById는 세대표의 동 목록(라인별 층 범위·코어 정보)이며, 없으면 호수만 묶는다.
+function unitLines(units, buildingById) {
+  const byBuilding = []
+  sortUnits(units).forEach((unit) => {
+    let entry = byBuilding[byBuilding.length - 1]
+    if (!entry || entry.buildingId !== unit.buildingId) {
+      entry = { buildingId: unit.buildingId, name: unit.buildingName, floors: [] }
+      byBuilding.push(entry)
+    }
+    const last = entry.floors[entry.floors.length - 1]
+    if (last && last.floor === unit.floor) last.worked.push(unit.lineNo)
+    else entry.floors.push({ floor: unit.floor, worked: [unit.lineNo] })
+  })
+
+  return byBuilding.map((entry) => {
+    const lines = buildingById[entry.buildingId]?.lines ?? null
+    const groups = []
+    entry.floors.forEach(({ floor, worked }) => {
+      const available = lines ? lines.filter((line) => inLine(line, floor)) : null
+      const tokens = floorTokens(worked, available)
+      const sig = tokens.map((token) => token.sig).join('|')
+      const last = groups[groups.length - 1]
+      // 바로 위층이고 묶음이 똑같으면 층 범위만 늘린다
+      if (last && last.endFloor + 1 === floor && last.sig === sig) last.endFloor = floor
+      else groups.push({ startFloor: floor, endFloor: floor, sig, tokens })
+    })
+    return `· ${entry.name}: ${groups.map(renderFloorGroup).join(' / ')}`
+  })
 }
 
 function defectLine(defect) {
@@ -199,7 +292,9 @@ function defectLine(defect) {
   return `· ${defect.buildingName} ${unitNo(defect)}호${detail ? ` ${detail}` : ''}`
 }
 
-export function buildReportText({ site, userName, date = new Date() }) {
+// buildings: 세대표의 동 목록. 넘기면 "전체"·코어 표기까지 쓰고, 없으면 호수만 층별로 묶는다.
+export function buildReportText({ site, userName, buildings = [], date = new Date() }) {
+  const buildingById = Object.fromEntries(buildings.map((b) => [b.id, b]))
   const dateText = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} (${DOW[date.getDay()]})`
   const out = [`[작업보고] ${dateText}`, `현장: ${site.siteName}`, `작성: ${userName}`]
 
@@ -208,10 +303,8 @@ export function buildReportText({ site, userName, date = new Date() }) {
     out.push('', title, ...lines)
   }
 
-  section(`■ 경량 ${site.light.length}세대`, unitLines(site.light))
-  section(`■ 합지 ${site.laminate.length}세대`, unitLines(site.laminate))
-  section(`■ 석고 시공 경량 ${site.plasterLight.length}세대`, unitLines(site.plasterLight))
-  section(`■ 석고 시공 합지 ${site.plasterLaminate.length}세대`, unitLines(site.plasterLaminate))
+  section(`■ ${site.crc ? 'CRC' : '경량'} ${site.light.length}세대`, unitLines(site.light, buildingById))
+  if (!site.crc) section(`■ 합지 ${site.laminate.length}세대`, unitLines(site.laminate, buildingById))
   section(`■ 미타공 등록 ${site.defectsAdded.length}건`, sortUnits(site.defectsAdded).map(defectLine))
   section(`■ 미타공 처리 완료 ${site.defectsResolved.length}건`, sortUnits(site.defectsResolved).map(defectLine))
   section(

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { IconPaperclip } from '@tabler/icons-react'
 import { deleteReceipt, getReceiptUrl, uploadReceipt } from '../../api/expense'
-import { addSalaryEntry, deleteSalaryEntry, fetchMonthSalaryEntries, updateSalaryEntry } from '../../api/salary'
+import { addSalaryEntry, deleteSalaryEntry, updateSalaryEntry } from '../../api/salary'
+import { fetchSalaryTotalsForUser } from '../../api/salaryTax'
 import { fetchSites } from '../../api/sites'
 import CalendarNav from '../../components/CalendarNav'
+import GrossNote from '../../components/GrossNote'
 import Modal from '../../components/Modal'
 import { useAuth } from '../../hooks/useAuth'
 import { usePeriod } from '../../hooks/usePeriod'
-import { formatWon } from '../../lib/format'
+import { formatDays, formatWon } from '../../lib/format'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
@@ -28,8 +30,12 @@ export default function SalaryTab() {
       .catch((err) => setError(err.message))
   }, [])
 
+  // 제외 전 금액까지 같이 계산해서 받아온다(입력 건마다 그 현장 출근일수로 세율이 정해진다)
   const loadMonth = useCallback(
-    () => fetchMonthSalaryEntries({ userId: user.id, year, month }),
+    () =>
+      fetchSalaryTotalsForUser({ userId: user.id, year, month }).then((totals) =>
+        totals.entries.map((entry) => ({ ...entry, year, month }))
+      ),
     [user.id, year, month]
   )
 
@@ -139,6 +145,7 @@ export default function SalaryTab() {
   }
 
   const total = entries.reduce((sum, entry) => sum + entry.amount, 0)
+  const grossTotal = entries.reduce((sum, entry) => sum + entry.gross, 0)
   const formYears = form ? [form.year - 1, form.year, form.year + 1] : []
 
   return (
@@ -157,6 +164,7 @@ export default function SalaryTab() {
             {year}년 {month}월 일한 급여 합계
           </div>
           <div className="value">{formatWon(total)}</div>
+          <GrossNote gross={grossTotal} />
         </div>
         <div className="metric-card">
           <div className="label">입력 건수</div>
@@ -180,8 +188,16 @@ export default function SalaryTab() {
         )}
         {entries.map((entry) => (
           <div key={entry.id} className="row clickable salary-entry-row" onClick={() => openEdit(entry)}>
-            <span>{entry.siteName ?? '현장 미지정(이전 입력)'}</span>
-            <span className="mono">{formatWon(entry.amount)}</span>
+            <span>
+              {entry.siteName ?? '현장 미지정(이전 입력)'}
+              <div className="gross-note">
+                {formatDays(entry.days)} · {entry.percent}% 제외
+              </div>
+            </span>
+            <span className="mono">
+              {formatWon(entry.amount)}
+              <GrossNote gross={entry.gross} />
+            </span>
             <span>
               {entry.receiptPath ? (
                 <button
