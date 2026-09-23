@@ -22,6 +22,7 @@ import PaymentSiteDetailPage from './pages/payment/PaymentSiteDetailPage'
 import PaymentLaborDetailPage from './pages/payment/PaymentLaborDetailPage'
 import HrListPage from './pages/hr/HrListPage'
 import HrDetailPage from './pages/hr/HrDetailPage'
+import HoleStatusPage from './pages/holes/HoleStatusPage'
 import UpcomingPage from './pages/upcoming/UpcomingPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import DevPage from './pages/dev/DevPage'
@@ -83,6 +84,12 @@ export const router = createBrowserRouter([
               { path: 'hr', element: <HrListPage /> },
               { path: 'hr/:userId', element: <HrDetailPage /> },
             ],
+          },
+
+          // 현장 타공 현황 (팀장, 개발자)
+          {
+            element: <RoleRoute menuKey="holes" />,
+            children: [{ path: 'holes', element: <HoleStatusPage /> }],
           },
 
           // 예정현장 (팀장, 개발자)

@@ -23,6 +23,22 @@ function CheckRow({ label, done, by }) {
   )
 }
 
+// 세대 타공 수와 붙은 옵션. 타입이나 타공 수가 없으면 미설정으로 보여준다.
+function HoleRow({ info }) {
+  const options = info.options
+    .map((option) => `${option.name} ${option.hole_delta >= 0 ? '+' : ''}${option.hole_delta}`)
+    .join(', ')
+  return (
+    <div className="check-row">
+      <span>타공</span>
+      <span>
+        {info.holes == null ? '미설정' : `${info.holes}개`}
+        {options && ` (${options})`}
+      </span>
+    </div>
+  )
+}
+
 function LogSection({ logs, names }) {
   return (
     <div className="log-section">
@@ -50,6 +66,7 @@ export default function CellPanel({
   names,
   selectedDefectId,
   crc = false,
+  holeInfo = null,
   onSelectDefect,
   onClose,
   onClearCheck,
@@ -126,6 +143,7 @@ export default function CellPanel({
               by={actorLabel(names, check?.laminate_by, check?.laminate_at)}
             />
           )}
+          {holeInfo && <HoleRow info={holeInfo} />}
           {sheetView === 'main' && (
             <div className="check-row">
               <span>미타공</span>

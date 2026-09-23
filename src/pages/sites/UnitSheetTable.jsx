@@ -92,6 +92,9 @@ export default function UnitSheetTable({
   scale,
   horizontal,
   crc = false,
+  // 옵션 지정 중이면 체크 색 대신, 고른 옵션이 붙은 세대(optionCells: cellKey 집합)만 표시한다
+  optionMode = false,
+  optionCells = null,
   onCellClick,
   onCellsCheck,
 }) {
@@ -178,7 +181,9 @@ export default function UnitSheetTable({
                       const classNames = ['unit-cell']
                       let style
 
-                      if (sheetView === 'plaster') {
+                      if (optionMode) {
+                        if (optionCells?.has(cellKey(building.id, line.line_no, floor))) classNames.push('option-marked')
+                      } else if (sheetView === 'plaster') {
                         style = checkBackground(check, crc)
                       } else {
                         const unresolved = (defects[cellKey(building.id, line.line_no, floor)] ?? []).filter(
@@ -188,6 +193,8 @@ export default function UnitSheetTable({
                           if (unresolved.length) classNames.push('defect')
                         } else {
                           style = checkBackground(check, crc)
+                          // 평소에도 미처리 미타공이 있는 세대는 모서리에 빨간 점을 찍어 둔다
+                          if (unresolved.length) classNames.push('has-defect')
                         }
                         const plaster = checks[checkKey(building.id, line.line_no, floor, 'plaster')]
                         if (plaster?.light || plaster?.laminate) classNames.push('plaster-marked')

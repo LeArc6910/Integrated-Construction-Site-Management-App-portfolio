@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   addDefect,
@@ -20,15 +20,19 @@ import {
   setUnitChecks,
   updateBuilding,
 } from '../../api/unitSheet'
+import { ensureSiteUnitTypes, fetchSiteHoleSetup, saveSiteHoleSetup, setUnitOption } from '../../api/holes'
 import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
+import { unitHoleCount } from '../../lib/holes'
 import { isCrcOwner } from '../../lib/siteMode'
+import MenuButton from '../../components/MenuButton'
 import { enqueueWrite } from '../../lib/offlineQueue'
 import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileName } from '../../lib/unitSheetImage'
 import BuildingEditModal from './BuildingEditModal'
 import CellPanel from './CellPanel'
 import ChecklistPanel from './ChecklistPanel'
 import DefectAddModal from './DefectAddModal'
+import HoleSetupModal from './HoleSetupModal'
 import SectionEditModal from './SectionEditModal'
 import SheetShareModal from './SheetShareModal'
 import UnitSheetTable from './UnitSheetTable'
@@ -125,8 +129,11 @@ export default function SiteDetailPage() {
   const [scale, setScale] = useState(1)
   const [horizontal, setHorizontal] = useState(loadHorizontal)
   const [sheetView, setSheetView] = useState('main') // 'main' | 'plaster'
-  const [bar, setBar] = useState('default') // 'default' | 'work' | 'defect'
+  const [bar, setBar] = useState('default') // 'default' | 'work' | 'defect' | 'option'
   const [workSub, setWorkSub] = useState(null) // 'light' | 'laminate'
+  // 타공 설정(현장 타입표·옵션표)과 세대별 옵션. 세대표와 따로 받아온다(오프라인 캐시 대상 아님).
+  const [holeSetup, setHoleSetup] = useState({ types: [], options: [], unitOptions: {} })
+  const [optionId, setOptionId] = useState(null) // 옵션 지정 중에 고른 옵션
 
   const [panel, setPanel] = useState(null) // { buildingId, buildingName, lineNo, floor, kind }
   const [logs, setLogs] = useState([])
@@ -135,9 +142,12 @@ export default function SiteDetailPage() {
   const [buildingModal, setBuildingModal] = useState(false)
   const [sectionModal, setSectionModal] = useState(false)
   const [shareModal, setShareModal] = useState(false)
+  const [holeModal, setHoleModal] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const sheetOwner = sheet.ownerId ?? siteId
+  // 체크·미타공을 한 현장. 공유 세대표라도 원본이 아니라 지금 보고 있는 현장이다(작업보고 기준)
+  const workSiteId = Number(siteId)
   // 세대표를 공유하면 체크도 원본과 함께 쓰므로 CRC 여부는 원본 현장 이름으로 정한다
   const crc = isCrcOwner({ ownerName: sheet.ownerName, siteName: sheet.site?.name })
 
@@ -165,6 +175,23 @@ export default function SiteDetailPage() {
       setError(err.message)
     }
   }, [load])
+
+  // 동 목록이 바뀔 때(동 추가·삭제)만 다시 받도록 id 목록을 문자열 하나로 둔다
+  const buildingIdsKey = sheet.buildings.map((building) => building.id).join(',')
+
+  const reloadHoles = useCallback(async () => {
+    if (!sheet.ownerId || sheet.offline) return
+    try {
+      const buildingIds = buildingIdsKey ? buildingIdsKey.split(',').map(Number) : []
+      setHoleSetup(await fetchSiteHoleSetup({ siteId: sheet.ownerId, buildingIds }))
+    } catch (err) {
+      setError(err.message)
+    }
+  }, [sheet.ownerId, sheet.offline, buildingIdsKey])
+
+  useEffect(() => {
+    reloadHoles()
+  }, [reloadHoles])
 
   // 오프라인이던 중에 연결이 돌아오면 캐시 대신 최신 세대표를 다시 받아온다
   useEffect(() => {
@@ -209,7 +236,42 @@ export default function SiteDetailPage() {
   function cancelMode() {
     setBar('default')
     setWorkSub(null)
+    setOptionId(null)
     closePanel()
+  }
+
+  // 드래그로 고른 세대들에 지금 고른 옵션을 붙이거나 뗀다. 방향은 작업 체크처럼 처음 누른 칸 기준.
+  async function handleCellsOption(building, cells) {
+    if (optionId === null || cells.length === 0) return
+    setError('')
+    setNotice('')
+
+    const anchor = cellKey(building.id, cells[0].lineNo, cells[0].floor)
+    const next = !(holeSetup.unitOptions[anchor] ?? []).includes(optionId)
+    const targets = cells.map((cell) => ({ buildingId: building.id, lineNo: cell.lineNo, floor: cell.floor }))
+    const option = holeSetup.options.find((item) => item.id === optionId)
+
+    try {
+      await setUnitOption({ cells: targets, optionId, value: next })
+      setHoleSetup((prev) => {
+        const unitOptions = { ...prev.unitOptions }
+        targets.forEach((cell) => {
+          const key = cellKey(cell.buildingId, cell.lineNo, cell.floor)
+          const rest = (unitOptions[key] ?? []).filter((id) => id !== optionId)
+          unitOptions[key] = next ? [...rest, optionId] : rest
+        })
+        return { ...prev, unitOptions }
+      })
+      await addUnitLogs({
+        cells: targets,
+        sheet: 'main',
+        action: next ? '옵션 지정' : '옵션 해제',
+        detail: option?.name ?? null,
+        userId: user.id,
+      })
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   async function openPanel(building, lineNo, floor, kind) {
@@ -254,6 +316,7 @@ export default function SiteDetailPage() {
           field,
           value: next,
           userId: user.id,
+          siteId: workSiteId,
           action,
           detail,
           clientId: crypto.randomUUID(),
@@ -272,6 +335,7 @@ export default function SiteDetailPage() {
             [field]: next,
             [`${field}_by`]: next ? user.id : null,
             [`${field}_at`]: next ? now : null,
+            [`${field}_site_id`]: next ? workSiteId : null,
           }
         })
         return { ...prev, checks }
@@ -281,7 +345,14 @@ export default function SiteDetailPage() {
     }
 
     try {
-      const rows = await setUnitChecks({ cells: targets, sheet: sheetView, field, value: next, userId: user.id })
+      const rows = await setUnitChecks({
+        cells: targets,
+        sheet: sheetView,
+        field,
+        value: next,
+        userId: user.id,
+        siteId: workSiteId,
+      })
       setSheet((prev) => {
         const checks = { ...prev.checks }
         rows.forEach((row) => {
@@ -362,6 +433,7 @@ export default function SiteDetailPage() {
             locations: [location],
             content,
             userId: user.id,
+            siteId: workSiteId,
             clientId,
           })
           pendingDefects.push({
@@ -397,6 +469,7 @@ export default function SiteDetailPage() {
           locations: [location],
           content,
           userId: user.id,
+          siteId: workSiteId,
           clientId: crypto.randomUUID(),
         })
         await addUnitLog({
@@ -434,6 +507,7 @@ export default function SiteDetailPage() {
           floor: panel.floor,
           detail: defectSummary(defect),
           userId: user.id,
+          siteId: workSiteId,
           clientId: crypto.randomUUID(),
         })
       } catch (err) {
@@ -458,7 +532,7 @@ export default function SiteDetailPage() {
     }
 
     try {
-      await resolveDefect({ id: defect.id, userId: user.id })
+      await resolveDefect({ id: defect.id, userId: user.id, siteId: workSiteId })
       await addUnitLog({
         ...panel,
         sheet: 'main',
@@ -535,6 +609,9 @@ export default function SiteDetailPage() {
       setBuildingModal(false)
       changeBuilding(name)
       await reload()
+      // 새로 적은 타입 이름은 타공 설정에도 (타공 수 없이) 올려 둔다
+      await ensureSiteUnitTypes({ siteId: sheetOwner, names: lines.map((line) => line.unitType) })
+      await reloadHoles()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -563,6 +640,22 @@ export default function SiteDetailPage() {
     try {
       await reorderBuildings({ orderedIds })
       await reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSaveHoleSetup(setup) {
+    setSaving(true)
+    setError('')
+    try {
+      await saveSiteHoleSetup({ siteId: sheetOwner, buildingIds: sheet.buildings.map((b) => b.id), ...setup })
+      setHoleModal(false)
+      // 타입 이름을 바꾸면 라인 값도 바뀌므로 세대표도 다시 받는다
+      await reload()
+      await reloadHoles()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -672,6 +765,42 @@ export default function SiteDetailPage() {
 
   const hasUnassigned = sheet.buildings.some((building) => building.sectionId == null)
 
+  // 옵션 지정 중에 고른 옵션이 붙은 세대들
+  const optionCells = useMemo(() => {
+    if (optionId === null) return null
+    return new Set(
+      Object.entries(holeSetup.unitOptions)
+        .filter(([, ids]) => ids.includes(optionId))
+        .map(([key]) => key)
+    )
+  }, [holeSetup.unitOptions, optionId])
+
+  // 세대 정보 패널에 보여줄 타공 수와 그 내역
+  function holeInfoOf(target) {
+    const typeHoles = Object.fromEntries(holeSetup.types.map((type) => [type.name, type.hole_count]))
+    const optionDeltas = Object.fromEntries(holeSetup.options.map((option) => [option.id, option.hole_delta]))
+    const optionIds = holeSetup.unitOptions[cellKey(target.buildingId, target.lineNo, target.floor)] ?? []
+    return {
+      holes: unitHoleCount({ unitType: target.unitType, optionIds, typeHoles, optionDeltas }),
+      options: holeSetup.options.filter((option) => optionIds.includes(option.id)),
+    }
+  }
+
+  // 타공 설정 모달에 보여줄 사용 현황
+  const lineCountByType = {}
+  sheet.buildings.forEach((building) =>
+    building.lines.forEach((line) => {
+      const name = line.unit_type?.trim()
+      if (name) lineCountByType[name] = (lineCountByType[name] ?? 0) + 1
+    })
+  )
+  const optionUnitCount = {}
+  Object.values(holeSetup.unitOptions).forEach((ids) =>
+    ids.forEach((id) => {
+      optionUnitCount[id] = (optionUnitCount[id] ?? 0) + 1
+    })
+  )
+
   const currentDefects = panel ? (sheet.defects[cellKey(panel.buildingId, panel.lineNo, panel.floor)] ?? []) : []
 
   return (
@@ -765,12 +894,14 @@ export default function SiteDetailPage() {
         defects={sheet.defects}
         sheetView={sheetView}
         defectMode={bar === 'defect'}
-        dragMode={bar === 'work' && workSub !== null}
+        dragMode={(bar === 'work' && workSub !== null) || (bar === 'option' && optionId !== null)}
         scale={scale}
         horizontal={horizontal}
         crc={crc}
+        optionMode={bar === 'option'}
+        optionCells={optionCells}
         onCellClick={handleCellClick}
-        onCellsCheck={handleCellsCheck}
+        onCellsCheck={bar === 'option' ? handleCellsOption : handleCellsCheck}
       />
 
       <div className="mode-bar">
@@ -797,6 +928,31 @@ export default function SiteDetailPage() {
               취소
             </button>
             {workSub && <span className="mode-hint">칸을 끌면 여러 칸이 한 번에 체크됩니다</span>}
+          </>
+        ) : bar === 'option' ? (
+          <>
+            {holeSetup.options.length === 0 ? (
+              <span className="mode-hint">&quot;타공 설정&quot;에서 옵션을 먼저 추가하세요</span>
+            ) : (
+              <select
+                value={optionId ?? ''}
+                onChange={(e) => setOptionId(e.target.value ? Number(e.target.value) : null)}
+                aria-label="옵션 선택"
+              >
+                <option value="">옵션 선택</option>
+                {holeSetup.options.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name} ({option.hole_delta >= 0 ? `+${option.hole_delta}` : option.hole_delta})
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" className="btn danger" onClick={cancelMode}>
+              취소
+            </button>
+            {optionId !== null && (
+              <span className="mode-hint">칸을 누르거나 끌면 옵션이 붙고, 이미 붙은 칸에서 시작하면 떼어집니다</span>
+            )}
           </>
         ) : bar === 'defect' ? (
           <button type="button" className="btn danger" onClick={cancelMode}>
@@ -829,15 +985,6 @@ export default function SiteDetailPage() {
             <button type="button" className="btn" onClick={() => switchSheetView('plaster')}>
               석고 시공
             </button>
-            <button type="button" className="btn" onClick={() => setBuildingModal(true)}>
-              세대표 수정
-            </button>
-            <button type="button" className="btn" onClick={() => setSectionModal(true)}>
-              공구 수정
-            </button>
-            <button type="button" className="btn" disabled={sheet.offline} onClick={() => setShareModal(true)}>
-              세대표 공유
-            </button>
             <button
               type="button"
               className="btn"
@@ -846,6 +993,25 @@ export default function SiteDetailPage() {
             >
               세대표 다운로드
             </button>
+            {/* 현장에서 매일 쓰는 작업만 바로 누를 수 있게 두고, 가끔 쓰는 설정은 관리 메뉴로 모은다 */}
+            <MenuButton
+              label="관리"
+              items={[
+                { key: 'building', label: '세대표 수정', onClick: () => setBuildingModal(true) },
+                { key: 'section', label: '공구 수정', onClick: () => setSectionModal(true) },
+                { key: 'hole', label: '타공 설정', disabled: sheet.offline, onClick: () => setHoleModal(true) },
+                {
+                  key: 'option',
+                  label: '옵션 지정',
+                  disabled: sheet.offline,
+                  onClick: () => {
+                    setBar('option')
+                    closePanel()
+                  },
+                },
+                { key: 'share', label: '세대표 공유', disabled: sheet.offline, onClick: () => setShareModal(true) },
+              ]}
+            />
           </>
         )}
       </div>
@@ -860,6 +1026,7 @@ export default function SiteDetailPage() {
           names={names}
           selectedDefectId={selectedDefectId}
           crc={crc}
+          holeInfo={sheetView === 'main' && !sheet.offline ? holeInfoOf(panel) : null}
           onSelectDefect={(id) => setSelectedDefectId((prev) => (prev === id ? null : id))}
           onClose={closePanel}
           onClearCheck={handleClearCheck}
@@ -877,6 +1044,7 @@ export default function SiteDetailPage() {
       {buildingModal && (
         <BuildingEditModal
           buildings={sheet.buildings}
+          typeNames={holeSetup.types.map((type) => type.name)}
           saving={saving}
           onClose={() => setBuildingModal(false)}
           onSubmit={handleSaveBuilding}
@@ -891,6 +1059,17 @@ export default function SiteDetailPage() {
           saving={saving}
           onClose={() => setSectionModal(false)}
           onSubmit={handleSaveSections}
+        />
+      )}
+      {holeModal && (
+        <HoleSetupModal
+          types={holeSetup.types}
+          options={holeSetup.options}
+          lineCountByType={lineCountByType}
+          optionUnitCount={optionUnitCount}
+          saving={saving}
+          onClose={() => setHoleModal(false)}
+          onSubmit={handleSaveHoleSetup}
         />
       )}
       {shareModal && (

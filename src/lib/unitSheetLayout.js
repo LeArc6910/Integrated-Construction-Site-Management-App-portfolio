@@ -65,3 +65,8 @@ export function buildingSummary(building) {
   const maxFloor = building.lines.length ? Math.max(...building.lines.map((line) => lineRange(line).max)) : 0
   return { total, maxFloor }
 }
+
+// 동 이름 비교. 숫자는 숫자로 비교해서 101동 < 102동 < 1001동 순서가 된다(글자 비교면 1001동이 앞에 온다).
+export function compareBuildingName(a, b) {
+  return a.localeCompare(b, 'ko', { numeric: true })
+}

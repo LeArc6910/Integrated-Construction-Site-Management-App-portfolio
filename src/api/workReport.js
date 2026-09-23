@@ -19,12 +19,13 @@ function inRange(iso, { start, end }) {
   return time >= new Date(start).getTime() && time < new Date(end).getTime()
 }
 
-function emptySite(siteId, siteName) {
+// crcName: CRC 여부를 판단할 현장 이름. 공유 세대표는 체크 방식이 원본을 따르므로 원본 이름이다.
+function emptySite(siteId, siteName, crcName) {
   return {
     siteId,
     siteName,
     // CRC 현장은 경량·합지가 아니라 CRC 하나로 체크한다(값은 light 자리에 저장된다)
-    crc: isCrcSite(siteName),
+    crc: isCrcSite(crcName),
     light: [],
     laminate: [],
     defectsAdded: [],
@@ -43,7 +44,9 @@ function hasWork(site) {
   )
 }
 
-// 반환: 오늘 작업이 있는 현장 목록. 세대표를 공유하는 현장은 동이 달린 원본 현장 기준으로 묶인다.
+// 반환: 오늘 작업이 있는 현장 목록. 체크·미타공은 작업한 현장 화면 기준으로 묶는다. 세대표를 공유하면
+// 동은 원본 현장에 달려 있지만, 공유받은 현장에서 작업했으면 그 현장으로 보고한다. 작업한 현장이
+// 기록되지 않은 예전 기록(이전 버전 앱)은 동이 달린 원본 현장으로 묶는다.
 export async function fetchTodayWork({ userId, date = new Date() }) {
   const range = dayRange(date)
 
@@ -51,7 +54,9 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
     fetchAllRows(() =>
       supabase
         .from('unit_checks')
-        .select('building_id, line_no, floor, sheet, light, light_by, light_at, laminate, laminate_by, laminate_at')
+        .select(
+          'building_id, line_no, floor, sheet, light, light_by, light_at, light_site_id, laminate, laminate_by, laminate_at, laminate_site_id'
+        )
         .or(
           `and(light_by.eq.${userId},light_at.gte.${range.start},light_at.lt.${range.end}),` +
             `and(laminate_by.eq.${userId},laminate_at.gte.${range.start},laminate_at.lt.${range.end})`
@@ -59,14 +64,14 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
     ),
     supabase
       .from('defects')
-      .select('id, building_id, line_no, floor, locations, content, created_at')
+      .select('id, building_id, line_no, floor, locations, content, created_at, created_site_id')
       .eq('created_by', userId)
       .gte('created_at', range.start)
       .lt('created_at', range.end)
       .order('created_at'),
     supabase
       .from('defects')
-      .select('id, building_id, line_no, floor, locations, content, resolved_at')
+      .select('id, building_id, line_no, floor, locations, content, resolved_at, resolved_site_id')
       .eq('resolved', true)
       .eq('resolved_by', userId)
       .gte('resolved_at', range.start)
@@ -93,22 +98,48 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
   if (buildingsRes.error) throw buildingsRes.error
   const buildingById = Object.fromEntries(buildingsRes.data.map((b) => [b.id, b]))
 
+  const workSiteIds = [
+    ...checkRows.flatMap((row) => [row.light_site_id, row.laminate_site_id]),
+    ...addedRes.data.map((row) => row.created_site_id),
+    ...resolvedRes.data.map((row) => row.resolved_site_id),
+  ].filter(Boolean)
   const siteIds = [
-    ...new Set([...buildingsRes.data.map((b) => b.site_id), ...checklistRes.data.map((item) => item.site_id)]),
+    ...new Set([
+      ...buildingsRes.data.map((b) => b.site_id),
+      ...checklistRes.data.map((item) => item.site_id),
+      ...workSiteIds,
+    ]),
   ]
   const sitesRes = siteIds.length
-    ? await supabase.from('sites').select('id, name').in('id', siteIds)
+    ? await supabase.from('sites').select('id, name, sheet_source_id').in('id', siteIds)
     : { data: [], error: null }
   if (sitesRes.error) throw sitesRes.error
   const siteNameById = Object.fromEntries(sitesRes.data.map((s) => [s.id, s.name]))
 
+  // 체크리스트만 있는 공유 현장은 원본 현장이 아직 목록에 없을 수 있어 이름을 더 받아온다
+  const missingOwnerIds = [
+    ...new Set(sitesRes.data.map((s) => s.sheet_source_id).filter((id) => id && !(id in siteNameById))),
+  ]
+  if (missingOwnerIds.length) {
+    const ownersRes = await supabase.from('sites').select('id, name').in('id', missingOwnerIds)
+    if (ownersRes.error) throw ownersRes.error
+    ownersRes.data.forEach((s) => {
+      siteNameById[s.id] = s.name
+    })
+  }
+  const ownerById = Object.fromEntries(sitesRes.data.map((s) => [s.id, s.sheet_source_id ?? s.id]))
+
   const bySite = {}
   function siteOf(siteId) {
-    if (!bySite[siteId]) bySite[siteId] = emptySite(siteId, siteNameById[siteId] ?? '알 수 없는 현장')
+    if (!bySite[siteId]) {
+      const name = siteNameById[siteId] ?? '알 수 없는 현장'
+      bySite[siteId] = emptySite(siteId, name, siteNameById[ownerById[siteId]] ?? name)
+    }
     return bySite[siteId]
   }
 
-  function unitOf(row) {
+  // workSiteId: 그 작업을 한 현장 화면(기록돼 있으면). 없으면 동이 달린 원본 현장이다.
+  function unitOf(row, workSiteId = null) {
     const building = buildingById[row.building_id]
     if (!building) return null
     return {
@@ -117,29 +148,33 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
       sortOrder: building.sort_order ?? 0,
       lineNo: row.line_no,
       floor: row.floor,
-      siteId: building.site_id,
+      siteId: workSiteId ?? building.site_id,
     }
   }
 
   checkRows.forEach((row) => {
     // 석고 시공 세대표의 체크는 작업보고에 넣지 않는다
     if (row.sheet === 'plaster') return
-    const unit = unitOf(row)
-    if (!unit) return
-    const site = siteOf(unit.siteId)
+    // 경량과 합지는 다른 현장 화면에서 체크됐을 수 있어 따로 묶는다
     const lightToday = row.light && row.light_by === userId && inRange(row.light_at, range)
     const laminateToday = row.laminate && row.laminate_by === userId && inRange(row.laminate_at, range)
-    if (lightToday) site.light.push(unit)
-    if (laminateToday) site.laminate.push(unit)
+    if (lightToday) {
+      const unit = unitOf(row, row.light_site_id)
+      if (unit) siteOf(unit.siteId).light.push(unit)
+    }
+    if (laminateToday) {
+      const unit = unitOf(row, row.laminate_site_id)
+      if (unit) siteOf(unit.siteId).laminate.push(unit)
+    }
   })
 
   addedRes.data.forEach((row) => {
-    const unit = unitOf(row)
+    const unit = unitOf(row, row.created_site_id)
     if (unit) siteOf(unit.siteId).defectsAdded.push({ ...unit, locations: row.locations, content: row.content })
   })
 
   resolvedRes.data.forEach((row) => {
-    const unit = unitOf(row)
+    const unit = unitOf(row, row.resolved_site_id)
     if (unit) siteOf(unit.siteId).defectsResolved.push({ ...unit, locations: row.locations, content: row.content })
   })
 
