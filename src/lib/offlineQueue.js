@@ -36,6 +36,8 @@ const HANDLERS = {
       field: payload.field,
       value: payload.value,
       userId: payload.userId,
+      // 이전 버전에서 쌓인 항목에는 현장이 없다 → 작업보고에서 원본 현장으로 본다
+      siteId: payload.siteId ?? null,
     })
     await addUnitLogs({
       cells,
@@ -59,7 +61,7 @@ const HANDLERS = {
     })
   },
   defectResolve: async (payload) => {
-    await resolveDefect({ id: payload.id, userId: payload.userId })
+    await resolveDefect({ id: payload.id, userId: payload.userId, siteId: payload.siteId ?? null })
     await addUnitLog({
       buildingId: payload.buildingId,
       lineNo: payload.lineNo,

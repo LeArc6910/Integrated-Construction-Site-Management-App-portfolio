@@ -1014,17 +1014,34 @@ input[type='date'] {
   padding: 9px 2px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
-  cursor: grab;
 }
 
 .building-row:last-child {
   border-bottom: 0;
 }
 
+.building-row.dragging {
+  background: var(--accent-bg);
+}
+
+/* 손잡이만 드래그를 받는다. touch-action: none이어야 아이폰에서 끄는 동안 화면이 스크롤되지 않는다 */
 .building-row-drag {
+  padding: 4px 8px;
+  margin: -4px 0 -4px -6px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 16px;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.building-order-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .building-row-name {
@@ -1257,6 +1274,23 @@ input[type='date'] {
 
 .unit-cell.defect {
   background: var(--red-bg);
+}
+
+/* 메인 세대표에서 미처리 미타공이 있는 세대: 오른쪽 위 빨간 점 */
+.unit-cell.has-defect {
+  position: relative;
+}
+
+.unit-cell.has-defect::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  pointer-events: none;
 }
 
 .mode-bar {
@@ -1600,6 +1634,187 @@ input[type='date'] {
   grid-template-columns: 1.2fr 0.8fr 1.2fr;
 }
 
+/* 세대표: 옵션 지정 중 고른 옵션이 붙은 세대 */
+.unit-cell.option-marked {
+  background: var(--accent-bg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.unit-cell.option-marked .unit-no {
+  font-weight: 600;
+}
+
+/* 타공 설정 모달: 이름 · 타공 수(가감) · 삭제 */
+.hole-edit-head,
+.hole-edit-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 36px;
+  gap: 6px;
+  align-items: center;
+}
+
+.hole-edit-head {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.hole-edit-row {
+  margin-top: 6px;
+  align-items: start;
+}
+
+/* .modal-box input:not(...)과 구체성이 같아서, 뒤에 두어야 이긴다 */
+.modal-box .hole-edit-row input:not([type='checkbox']):not([type='radio']) {
+  margin: 0;
+  padding: 8px 6px;
+}
+
+.hole-edit-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.hole-delta {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 4px;
+}
+
+.modal-box .hole-delta select {
+  width: 100%;
+  padding: 8px 4px;
+}
+
+.hole-add-btn {
+  margin: 8px 0 4px;
+}
+
+/* 현장 타공 현황 */
+.hole-rule {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.hole-unset-warning {
+  margin: -4px 0 12px;
+}
+
+.hole-site-card {
+  cursor: pointer;
+}
+
+.hole-site-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.hole-site-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hole-progress {
+  height: 8px;
+  margin: 6px 0 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.hole-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--teal);
+}
+
+.hole-people-head {
+  margin: 18px 0 8px;
+}
+
+.hole-people-head .section-label {
+  margin: 0;
+}
+
+.hole-people-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.hole-people-filters .cal-nav {
+  margin-bottom: 0;
+}
+
+.hole-person-row {
+  grid-template-columns: 1.4fr 1fr 1.2fr;
+}
+
+.hole-day-row {
+  padding-left: 28px;
+  background: #fafaf9;
+  color: var(--text-secondary);
+}
+
+/* 펼침 메뉴(MenuButton): PC는 버튼 아래 목록, 좁은 화면은 하단 시트 */
+.menu-button {
+  position: relative;
+}
+
+.menu-backdrop {
+  display: none;
+}
+
+/* 세대표 하단 버튼 줄은 페이지 맨 아래에 있어서, 아래로 펼치면 화면 밖으로 잘린다. 위로 펼친다 */
+.menu-list {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 60;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: var(--accent-bg);
+  outline: none;
+}
+
+.menu-item:disabled {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-sheet-title,
+.menu-cancel {
+  display: none;
+}
+
 /* iOS는 16px 미만 입력창에 포커스하면 화면을 확대하므로 모바일에서만 키운다 */
 @media (max-width: 760px) {
   .auth-box input:not([type='checkbox']),
@@ -1607,6 +1822,44 @@ input[type='date'] {
   .modal-box input:not([type='checkbox']):not([type='radio']),
   .auto-grow {
     font-size: 16px;
+  }
+
+  /* 펼침 메뉴는 손가락으로 누르기 쉬운 하단 시트로 */
+  .menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 90;
+  }
+
+  .menu-list {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
+    border-radius: 12px 12px 0 0;
+    z-index: 91;
+  }
+
+  .menu-sheet-title {
+    display: block;
+    padding: 6px 4px 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .menu-item {
+    padding: 14px 12px;
+    font-size: 15px;
+  }
+
+  .menu-cancel {
+    display: block;
+    margin-top: 6px;
+    text-align: center;
+    background: var(--surface-2);
   }
 
   /* 좁은 화면에서는 사이드 패널을 하단 시트로 */

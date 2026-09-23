@@ -1,5 +1,6 @@
 import { idbGet, idbPut, STORES } from '../lib/idb'
 import { fetchAllRows, supabase } from '../lib/supabase'
+import { compareBuildingName } from '../lib/unitSheetLayout'
 import { sheetOwnerId } from './sheetSharing'
 
 // 세대표 칸을 식별하는 키. 경량/합지 체크는 메인/석고 세대표가 따로 관리된다.
@@ -137,13 +138,19 @@ export async function fetchUserNames() {
 
 // 드래그로 여러 칸을 한 번에 칠할 수 있어서, 체크는 항상 칸 목록을 받아 한 번에 저장한다.
 // upsert는 넘긴 컬럼만 갱신하므로 경량을 칠해도 같은 칸의 합지 기록은 그대로 남는다.
-export async function setUnitChecks({ cells, sheet, field, value, userId }) {
+// siteId: 체크한 현장 화면. 공유 세대표에서는 원본이 아니라 지금 보고 있는 현장이 들어간다(작업보고 기준).
+export async function setUnitChecks({ cells, sheet, field, value, userId, siteId = null }) {
   if (cells.length === 0) return []
   const now = new Date().toISOString()
   const patch =
     field === 'light'
-      ? { light: value, light_by: value ? userId : null, light_at: value ? now : null }
-      : { laminate: value, laminate_by: value ? userId : null, laminate_at: value ? now : null }
+      ? { light: value, light_by: value ? userId : null, light_at: value ? now : null, light_site_id: value ? siteId : null }
+      : {
+          laminate: value,
+          laminate_by: value ? userId : null,
+          laminate_at: value ? now : null,
+          laminate_site_id: value ? siteId : null,
+        }
 
   const rows = cells.map((cell) => ({
     building_id: cell.buildingId,
@@ -177,6 +184,8 @@ export async function clearUnitCheck({ buildingId, lineNo, floor, sheet }) {
         laminate: false,
         laminate_by: null,
         laminate_at: null,
+        light_site_id: null,
+        laminate_site_id: null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'building_id,line_no,floor,sheet' }
@@ -190,11 +199,20 @@ export async function clearUnitCheck({ buildingId, lineNo, floor, sheet }) {
 // clientId(클라이언트에서 생성한 UUID)로 upsert해서, 오프라인 큐가 같은 등록을 두 번
 // 보내도 중복 등록되지 않는다. 중복으로 무시된 경우(ignoreDuplicates)에는 행이 반환되지
 // 않으니 maybeSingle을 쓴다.
-export async function addDefect({ buildingId, lineNo, floor, locations, content, userId, clientId }) {
+export async function addDefect({ buildingId, lineNo, floor, locations, content, userId, clientId, siteId = null }) {
   const { data, error } = await supabase
     .from('defects')
     .upsert(
-      { building_id: buildingId, line_no: lineNo, floor, locations, content, created_by: userId, client_id: clientId },
+      {
+        building_id: buildingId,
+        line_no: lineNo,
+        floor,
+        locations,
+        content,
+        created_by: userId,
+        client_id: clientId,
+        created_site_id: siteId,
+      },
       { onConflict: 'client_id', ignoreDuplicates: true }
     )
     .select()
@@ -203,10 +221,10 @@ export async function addDefect({ buildingId, lineNo, floor, locations, content,
   return data
 }
 
-export async function resolveDefect({ id, userId }) {
+export async function resolveDefect({ id, userId, siteId = null }) {
   const { error } = await supabase
     .from('defects')
-    .update({ resolved: true, resolved_by: userId, resolved_at: new Date().toISOString() })
+    .update({ resolved: true, resolved_by: userId, resolved_at: new Date().toISOString(), resolved_site_id: siteId })
     .eq('id', id)
   if (error) throw error
 }
@@ -281,26 +299,33 @@ export async function updateBuilding({ buildingId, name, lines }) {
 }
 
 export async function createBuilding({ siteId, name, lines }) {
-  // 새 동은 항상 맨 뒤에 붙는다.
-  const { data: lastRow, error: lastError } = await supabase
+  // 새 동은 이름순 자리에 끼워 넣는다. 지금 순서를 앞에서부터 보다가 이름이 처음으로 뒤인 동
+  // 앞에 넣는다. 드래그로 순서를 바꿔 둔 현장이어도 나머지 동의 순서는 그대로 유지된다.
+  const { data: existing, error: existingError } = await supabase
     .from('buildings')
-    .select('sort_order')
+    .select('id, name')
     .eq('site_id', siteId)
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (lastError) throw lastError
-  const sortOrder = (lastRow?.sort_order ?? -1) + 1
+    .order('sort_order')
+  if (existingError) throw existingError
+  const found = existing.findIndex((building) => compareBuildingName(building.name, name) > 0)
+  const index = found === -1 ? existing.length : found
 
   const { data, error } = await supabase
     .from('buildings')
-    .insert({ site_id: siteId, name, sort_order: sortOrder })
+    .insert({ site_id: siteId, name, sort_order: index })
     .select('id')
     .single()
   if (error) throw error
 
   const { error: linesError } = await supabase.from('building_lines').insert(lineRows(data.id, lines))
   if (linesError) throw linesError
+
+  // 맨 뒤가 아니면 뒤쪽 동들의 순서 번호를 한 칸씩 민다
+  if (index < existing.length) {
+    const ordered = existing.map((building) => building.id)
+    ordered.splice(index, 0, data.id)
+    await reorderBuildings({ orderedIds: ordered })
+  }
 
   return data.id
 }

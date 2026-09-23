@@ -1,6 +1,7 @@
 import {
   IconBuilding,
   IconCalendarEvent,
+  IconChartBar,
   IconCode,
   IconCreditCard,
   IconSettings,
@@ -15,6 +16,7 @@ export const MENU_ITEMS = [
   { key: 'sites', label: '현장관리', path: '/sites', icon: IconBuilding, roles: ALL_ROLES },
   { key: 'payment', label: '결제', path: '/payment', icon: IconCreditCard, roles: MANAGER_ROLES },
   { key: 'hr', label: '인사관리', path: '/hr', icon: IconUsers, roles: MANAGER_ROLES },
+  { key: 'holes', label: '현장 타공 현황', path: '/holes', icon: IconChartBar, roles: MANAGER_ROLES },
   { key: 'upcoming', label: '예정현장', path: '/upcoming', icon: IconCalendarEvent, roles: MANAGER_ROLES },
   { key: 'settings', label: '설정', path: '/settings', icon: IconSettings, roles: ALL_ROLES },
   { key: 'dev', label: '개발자 페이지', path: '/dev', icon: IconCode, roles: [ROLES.DEVELOPER] },
