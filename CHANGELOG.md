@@ -6,6 +6,32 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.9] - 2026-09-28
+
+### 변경
+
+- **세대표 작업 체크**: 체크를 풀어도 처리자·시각·작업한 현장을 지우지 않는다. **푼 날 안에**
+  다시 칠하면 원래 기록으로 돌아가서, 며칠 전에 완료한 세대를 드래그하다 실수로 풀었다 다시
+  칠해도 오늘 작업보고와 타공 현황(완료일·작업자)에 새로 잡히지 않는다. 다음 날 이후에 칠하면
+  실제로 다시 작업한 것으로 보고 그날·그 사람으로 새로 찍는다. 원래 기록으로 돌아간 칸은 작업
+  로그에 "해제 전 기록 유지"로 남는다. 세대 정보창의 [체크 취소]도 같은 규칙을 따른다.
+- **세대표 작업 체크**: 드래그 구간에 이미 원하는 상태인 칸이 섞여 있으면 그 칸은 건너뛴다.
+  빈 칸에서 시작해 칠할 때 구간 안의 예전 완료 칸까지 처리자·시각이 지금·나로 덮어써지던
+  문제가 없어진다. 작업 로그도 실제로 바뀐 칸만 남는다.
+- **세대표 작업 체크(오프라인)**: 오프라인에서 한 체크의 시각을 전송된 때가 아니라 실제로 누른
+  때로 기록한다.
+- **세대 정보창**: 창 바깥을 누르면 닫힌다. 다른 세대칸을 누르면 그 세대 창으로 바로 바뀐다.
+  창 위에 뜬 미타공 등록 창을 누르는 것은 바깥으로 치지 않고, 표를 스크롤하는 동작으로는
+  닫히지 않는다.
+
+### 참고
+
+- DB 스키마 변경 있음: `unit_checks.light_cleared_at`, `laminate_cleared_at` 컬럼 추가
+  (`20260928010000_unit_check_cleared_at.sql`). 새 앱이 이 컬럼을 조회하므로 배포 전에 DB에
+  먼저 올려야 한다. 빈 컬럼 추가라 1.0.8 앱에 먼저 올려도 영향이 없다.
+- 해제된 행에도 처리자·시각이 남으므로, 처리자·시각을 읽는 곳은 체크된 행(`light`/`laminate`가
+  true)만 봐야 한다. 작업보고 조회 조건에 이를 추가했다.
+
 ## [1.0.8] - 2026-09-23
 
 ### 추가
@@ -356,6 +382,7 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.9]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.9
 [1.0.8]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.8
 [1.0.7]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.7
 [1.0.6]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.6

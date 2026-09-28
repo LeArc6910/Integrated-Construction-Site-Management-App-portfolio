@@ -79,7 +79,10 @@ export async function fetchSiteSheet({ siteId }) {
     fetchAllRows(() =>
       supabase
         .from('unit_checks')
-        .select('building_id, line_no, floor, sheet, light, light_by, light_at, laminate, laminate_by, laminate_at')
+        .select(
+          'building_id, line_no, floor, sheet, light, light_by, light_at, light_site_id, light_cleared_at, ' +
+            'laminate, laminate_by, laminate_at, laminate_site_id, laminate_cleared_at'
+        )
         .in('building_id', buildingIds)
     ),
     supabase
@@ -136,29 +139,59 @@ export async function fetchUserNames() {
   return Object.fromEntries(data.map((row) => [row.id, row.name]))
 }
 
+function sameLocalDay(a, b) {
+  return new Date(a).toDateString() === new Date(b).toDateString()
+}
+
+// 체크를 해제해도 처리자·시각·작업 현장은 지우지 않고 해제 시각(*_cleared_at)만 남긴다.
+// 해제한 날 안에 다시 체크하면 실수로 푼 것으로 보고 남아 있던 기록을 되살린다. 그래야 며칠 전에
+// 완료한 세대를 드래그하다 풀었다가 다시 칠해도 오늘 작업보고·타공 현황에 새로 잡히지 않는다.
+// 다음 날 이후의 체크는 실제로 다시 작업한 것으로 보고 새로 찍는다.
+// prev: 체크하기 전 칸 상태(세대표의 checks 값, 없으면 null)
+export function canRestoreCheck(prev, field, now = new Date()) {
+  const clearedAt = prev?.[`${field}_cleared_at`]
+  return Boolean(
+    prev && !prev[field] && prev[`${field}_by`] && prev[`${field}_at`] && clearedAt && sameLocalDay(clearedAt, now)
+  )
+}
+
+// 한 칸에 저장할 경량/합지 값. 같은 방향(체크/해제)의 패치는 칸마다 키가 같아서 한 번에 upsert할 수 있다.
+export function checkPatch({ prev, field, value, userId, siteId = null, now = new Date() }) {
+  const at = new Date(now).toISOString()
+  if (!value) return { [field]: false, [`${field}_cleared_at`]: at }
+  const restore = canRestoreCheck(prev, field, now)
+  return {
+    [field]: true,
+    [`${field}_by`]: restore ? prev[`${field}_by`] : userId,
+    [`${field}_at`]: restore ? prev[`${field}_at`] : at,
+    [`${field}_site_id`]: restore ? (prev[`${field}_site_id`] ?? null) : siteId,
+    [`${field}_cleared_at`]: null,
+  }
+}
+
+// 체크 로그를 남길 칸 묶음. 원래 기록을 되살린 칸은 그 사실을 로그에 따로 적는다.
+export function checkLogGroups({ cells, field, value, detail, now = new Date() }) {
+  const restored = value ? cells.filter((cell) => canRestoreCheck(cell.prev, field, now)) : []
+  const others = cells.filter((cell) => !restored.includes(cell))
+  return [
+    { cells: others, detail },
+    { cells: restored, detail: [detail, '해제 전 기록 유지'].filter(Boolean).join(' · ') },
+  ].filter((group) => group.cells.length > 0)
+}
+
 // 드래그로 여러 칸을 한 번에 칠할 수 있어서, 체크는 항상 칸 목록을 받아 한 번에 저장한다.
 // upsert는 넘긴 컬럼만 갱신하므로 경량을 칠해도 같은 칸의 합지 기록은 그대로 남는다.
 // siteId: 체크한 현장 화면. 공유 세대표에서는 원본이 아니라 지금 보고 있는 현장이 들어간다(작업보고 기준).
-export async function setUnitChecks({ cells, sheet, field, value, userId, siteId = null }) {
+// cells[].prev: 체크하기 전 칸 상태(되살릴지 판단용). now: 실제로 체크한 시각(오프라인 큐는 나중에 전송된다).
+export async function setUnitChecks({ cells, sheet, field, value, userId, siteId = null, now = new Date() }) {
   if (cells.length === 0) return []
-  const now = new Date().toISOString()
-  const patch =
-    field === 'light'
-      ? { light: value, light_by: value ? userId : null, light_at: value ? now : null, light_site_id: value ? siteId : null }
-      : {
-          laminate: value,
-          laminate_by: value ? userId : null,
-          laminate_at: value ? now : null,
-          laminate_site_id: value ? siteId : null,
-        }
-
   const rows = cells.map((cell) => ({
     building_id: cell.buildingId,
     line_no: cell.lineNo,
     floor: cell.floor,
     sheet,
-    ...patch,
-    updated_at: now,
+    ...checkPatch({ prev: cell.prev ?? null, field, value, userId, siteId, now }),
+    updated_at: new Date().toISOString(),
   }))
 
   const { data, error } = await supabase
@@ -169,7 +202,19 @@ export async function setUnitChecks({ cells, sheet, field, value, userId, siteId
   return data
 }
 
-export async function clearUnitCheck({ buildingId, lineNo, floor, sheet }) {
+// 세대 패널의 [체크 취소]. 드래그 해제와 마찬가지로 체크돼 있던 작업만 해제 시각을 남기고 기록은 둔다.
+// prev가 없으면(이전 버전 오프라인 큐) 해제 시각을 남기지 않아 다시 체크할 때 새로 찍힌다.
+export function clearPatch(prev, now = new Date()) {
+  const at = new Date(now).toISOString()
+  return {
+    light: false,
+    laminate: false,
+    ...(prev?.light ? { light_cleared_at: at } : {}),
+    ...(prev?.laminate ? { laminate_cleared_at: at } : {}),
+  }
+}
+
+export async function clearUnitCheck({ buildingId, lineNo, floor, sheet, prev = null, now = new Date() }) {
   const { data, error } = await supabase
     .from('unit_checks')
     .upsert(
@@ -178,14 +223,7 @@ export async function clearUnitCheck({ buildingId, lineNo, floor, sheet }) {
         line_no: lineNo,
         floor,
         sheet,
-        light: false,
-        light_by: null,
-        light_at: null,
-        laminate: false,
-        laminate_by: null,
-        laminate_at: null,
-        light_site_id: null,
-        laminate_site_id: null,
+        ...clearPatch(prev, now),
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'building_id,line_no,floor,sheet' }

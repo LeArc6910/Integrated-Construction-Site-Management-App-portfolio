@@ -1,6 +1,16 @@
 import { checkIn } from '../api/attendance'
 import { addExpense, uploadReceipt } from '../api/expense'
-import { addDefect, addUnitLog, addUnitLogs, clearUnitCheck, defectSummary, deleteDefect, resolveDefect, setUnitChecks } from '../api/unitSheet'
+import {
+  addDefect,
+  addUnitLog,
+  addUnitLogs,
+  checkLogGroups,
+  clearUnitCheck,
+  defectSummary,
+  deleteDefect,
+  resolveDefect,
+  setUnitChecks,
+} from '../api/unitSheet'
 import { idbDelete, idbGetAll, idbPut, STORES } from './idb'
 
 // 큐에 쌓인 기록을 실제로 Supabase에 저장하는 방법. attendance/expense/defect API는
@@ -16,7 +26,15 @@ const HANDLERS = {
   },
   unitCheck: async (payload) => {
     if (payload.mode === 'clear') {
-      await clearUnitCheck({ buildingId: payload.buildingId, lineNo: payload.lineNo, floor: payload.floor, sheet: payload.sheet })
+      // 이전 버전에서 쌓인 항목에는 prev/now가 없다 → 해제 시각 없이 풀고, 시각은 전송 시점으로 본다
+      await clearUnitCheck({
+        buildingId: payload.buildingId,
+        lineNo: payload.lineNo,
+        floor: payload.floor,
+        sheet: payload.sheet,
+        prev: payload.prev ?? null,
+        now: payload.now ?? new Date(),
+      })
       await addUnitLog({
         buildingId: payload.buildingId,
         lineNo: payload.lineNo,
@@ -30,6 +48,8 @@ const HANDLERS = {
     }
     // 이전 버전에서 쌓인 항목은 cells 없이 칸 하나만 담고 있다
     const cells = payload.cells ?? [{ buildingId: payload.buildingId, lineNo: payload.lineNo, floor: payload.floor }]
+    // 체크한 시각(now)은 전송 시점이 아니라 오프라인에서 누른 시점이다. 되살릴지도 그 시점 기준으로 판단한다.
+    const now = payload.now ?? new Date()
     await setUnitChecks({
       cells,
       sheet: payload.sheet,
@@ -38,14 +58,17 @@ const HANDLERS = {
       userId: payload.userId,
       // 이전 버전에서 쌓인 항목에는 현장이 없다 → 작업보고에서 원본 현장으로 본다
       siteId: payload.siteId ?? null,
+      now,
     })
-    await addUnitLogs({
-      cells,
-      sheet: payload.sheet,
-      action: payload.action,
-      detail: payload.detail,
-      userId: payload.userId,
-    })
+    for (const group of checkLogGroups({ cells, field: payload.field, value: payload.value, detail: payload.detail, now })) {
+      await addUnitLogs({
+        cells: group.cells,
+        sheet: payload.sheet,
+        action: payload.action,
+        detail: group.detail,
+        userId: payload.userId,
+      })
+    }
   },
   defectAdd: async (payload) => {
     const defect = await addDefect(payload)
