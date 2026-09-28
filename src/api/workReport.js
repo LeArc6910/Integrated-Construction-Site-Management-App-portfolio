@@ -3,8 +3,8 @@ import { fetchAllRows, supabase } from '../lib/supabase'
 import { inLine } from '../lib/unitSheetLayout'
 
 // 작업보고는 "오늘 내가 처리한 것"의 현재 상태만 모은다. 별도 기록 테이블을 두지 않는 이유:
-// 체크를 해제하면 light_at/laminate_at이 null이 되고, 미타공 등록을 취소하면 행이 지워지므로
-// 실수로 등록했다가 취소한 건은 조회 결과에서 저절로 빠진다.
+// 체크를 해제한 행은 light/laminate가 false라 걸러지고(처리자·시각은 되살릴 수 있게 남아 있다),
+// 미타공 등록을 취소하면 행이 지워지므로, 실수로 등록했다가 취소한 건은 조회 결과에서 저절로 빠진다.
 
 function dayRange(date) {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -58,8 +58,8 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
           'building_id, line_no, floor, sheet, light, light_by, light_at, light_site_id, laminate, laminate_by, laminate_at, laminate_site_id'
         )
         .or(
-          `and(light_by.eq.${userId},light_at.gte.${range.start},light_at.lt.${range.end}),` +
-            `and(laminate_by.eq.${userId},laminate_at.gte.${range.start},laminate_at.lt.${range.end})`
+          `and(light.eq.true,light_by.eq.${userId},light_at.gte.${range.start},light_at.lt.${range.end}),` +
+            `and(laminate.eq.true,laminate_by.eq.${userId},laminate_at.gte.${range.start},laminate_at.lt.${range.end})`
         )
     ),
     supabase

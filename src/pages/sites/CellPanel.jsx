@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { defectSummary } from '../../api/unitSheet'
 
 function pad2(n) {
@@ -80,8 +81,26 @@ export default function CellPanel({
   const unresolved = defects.filter((defect) => !defect.resolved)
   const selectable = defects.some((defect) => defect.id === selectedDefectId && !defect.resolved && !defect.pending)
 
+  // 패널 바깥을 누르면 닫는다. 패널 위에 뜬 모달(미타공 등록 등)을 누른 건 바깥으로 치지 않는다.
+  // 다른 세대칸을 누르면 여기서 먼저 닫히고 그 칸의 클릭 처리에서 새 패널이 열린다.
+  // 누르는 순간(pointerdown)이 아니라 click으로 판단해서, 표를 스크롤하려고 끄는 동작으로는 닫히지 않는다.
+  // 캡처 단계로 걸어야 패널을 연 바로 그 클릭이 다시 닫는 일이 없다.
+  const panelRef = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    function handleClick(event) {
+      const target = event.target
+      if (!(target instanceof Element) || !target.isConnected) return
+      if (panelRef.current?.contains(target) || target.closest('.modal-overlay')) return
+      onCloseRef.current()
+    }
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
+  }, [])
+
   return (
-    <div className="side-panel">
+    <div className="side-panel" ref={panelRef}>
       <div className="side-panel-header">
         <b>{title}</b>
         <button type="button" onClick={onClose} aria-label="닫기">

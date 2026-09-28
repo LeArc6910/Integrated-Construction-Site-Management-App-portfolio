@@ -6,6 +6,9 @@ import {
   addUnitLogs,
   cellKey,
   checkKey,
+  checkLogGroups,
+  checkPatch,
+  clearPatch,
   clearUnitCheck,
   createBuilding,
   defectSummary,
@@ -305,7 +308,16 @@ export default function SiteDetailPage() {
     const workName = crc ? 'CRC' : field === 'light' ? '경량' : '합지'
     const action = `${workName} 체크${next ? '' : ' 해제'}`
     const detail = sheetView === 'plaster' ? '석고 시공' : null
-    const targets = cells.map((cell) => ({ buildingId: building.id, lineNo: cell.lineNo, floor: cell.floor }))
+    // 이미 원하는 상태인 칸은 건너뛴다. 빈 칸에서 시작해 칠할 때 구간에 섞인 예전 완료 칸까지 저장하면
+    // 처리자·시각이 지금·나로 덮어써져 오늘 작업보고에 잘못 들어간다.
+    const targets = cells
+      .map((cell) => {
+        const prev = sheet.checks[checkKey(building.id, cell.lineNo, cell.floor, sheetView)] ?? null
+        return { buildingId: building.id, lineNo: cell.lineNo, floor: cell.floor, prev }
+      })
+      .filter((cell) => Boolean(cell.prev?.[field]) !== next)
+    if (targets.length === 0) return
+    const now = new Date().toISOString()
 
     if (!navigator.onLine) {
       try {
@@ -317,6 +329,7 @@ export default function SiteDetailPage() {
           value: next,
           userId: user.id,
           siteId: workSiteId,
+          now,
           action,
           detail,
           clientId: crypto.randomUUID(),
@@ -325,17 +338,13 @@ export default function SiteDetailPage() {
         setError(err.message)
         return
       }
-      const now = new Date().toISOString()
       setSheet((prev) => {
         const checks = { ...prev.checks }
         targets.forEach((cell) => {
           const key = checkKey(cell.buildingId, cell.lineNo, cell.floor, sheetView)
           checks[key] = {
             ...checks[key],
-            [field]: next,
-            [`${field}_by`]: next ? user.id : null,
-            [`${field}_at`]: next ? now : null,
-            [`${field}_site_id`]: next ? workSiteId : null,
+            ...checkPatch({ prev: cell.prev, field, value: next, userId: user.id, siteId: workSiteId, now }),
           }
         })
         return { ...prev, checks }
@@ -352,6 +361,7 @@ export default function SiteDetailPage() {
         value: next,
         userId: user.id,
         siteId: workSiteId,
+        now,
       })
       setSheet((prev) => {
         const checks = { ...prev.checks }
@@ -360,7 +370,9 @@ export default function SiteDetailPage() {
         })
         return { ...prev, checks }
       })
-      await addUnitLogs({ cells: targets, sheet: sheetView, action, detail, userId: user.id })
+      for (const group of checkLogGroups({ cells: targets, field, value: next, detail, now })) {
+        await addUnitLogs({ cells: group.cells, sheet: sheetView, action, detail: group.detail, userId: user.id })
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -372,6 +384,8 @@ export default function SiteDetailPage() {
     const key = checkKey(panel.buildingId, panel.lineNo, panel.floor, sheetView)
     const cleared = crc ? 'CRC 해제' : '경량/합지 해제'
     const detail = sheetView === 'plaster' ? `석고 시공 · ${cleared}` : cleared
+    const prev = sheet.checks[key] ?? null
+    const now = new Date().toISOString()
 
     if (!navigator.onLine) {
       try {
@@ -382,6 +396,8 @@ export default function SiteDetailPage() {
           floor: panel.floor,
           sheet: sheetView,
           userId: user.id,
+          prev: prev && { light: Boolean(prev.light), laminate: Boolean(prev.laminate) },
+          now,
           action: '체크 취소',
           detail,
           clientId: crypto.randomUUID(),
@@ -390,22 +406,14 @@ export default function SiteDetailPage() {
         setError(err.message)
         return
       }
-      const row = {
-        light: false,
-        light_by: null,
-        light_at: null,
-        laminate: false,
-        laminate_by: null,
-        laminate_at: null,
-        updated_at: new Date().toISOString(),
-      }
-      setSheet((prev) => ({ ...prev, checks: { ...prev.checks, [key]: row } }))
+      const row = { ...prev, ...clearPatch(prev, now), updated_at: now }
+      setSheet((current) => ({ ...current, checks: { ...current.checks, [key]: row } }))
       setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
       return
     }
 
     try {
-      const row = await clearUnitCheck({ ...panel, sheet: sheetView })
+      const row = await clearUnitCheck({ ...panel, sheet: sheetView, prev, now })
       setSheet((prev) => ({ ...prev, checks: { ...prev.checks, [key]: row } }))
       await addUnitLog({ ...panel, sheet: sheetView, action: '체크 취소', detail, userId: user.id })
       await refreshLogs()
