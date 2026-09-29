@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { flushQueue } from '../../lib/offlineQueue'
+import NoticeBanner from './NoticeBanner'
 import Sidebar from './Sidebar'
 import './AppLayout.css'
 
@@ -20,6 +21,7 @@ export default function AppLayout() {
     <div className="app-shell">
       <Sidebar />
       <main className="main">
+        <NoticeBanner />
         {viewingOtherTeam && (
           <p className="team-view-banner">
             지금 <b>{user.current_team_name}</b> 데이터를 보고 있습니다. (개발자 페이지에서 소속 팀으로 돌아갈 수 있습니다)

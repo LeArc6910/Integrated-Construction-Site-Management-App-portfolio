@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
 import { IconLogout } from '@tabler/icons-react'
-import { MENU_ITEMS } from '../../config/menu'
+import { visibleMenus } from '../../config/menu'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function Sidebar() {
   const { user, logout } = useAuth()
-  const menus = MENU_ITEMS.filter((item) => item.roles.includes(user.role))
+  const menus = visibleMenus(user)
 
   return (
     <nav className="sidebar">

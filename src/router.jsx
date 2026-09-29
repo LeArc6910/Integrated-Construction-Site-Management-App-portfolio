@@ -23,7 +23,9 @@ import PaymentLaborDetailPage from './pages/payment/PaymentLaborDetailPage'
 import HrListPage from './pages/hr/HrListPage'
 import HrDetailPage from './pages/hr/HrDetailPage'
 import HoleStatusPage from './pages/holes/HoleStatusPage'
+import HoleSetupPage from './pages/holes/HoleSetupPage'
 import UpcomingPage from './pages/upcoming/UpcomingPage'
+import LeaderPage from './pages/leader/LeaderPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import DevPage from './pages/dev/DevPage'
 
@@ -55,6 +57,12 @@ export const router = createBrowserRouter([
           // 현장관리 (전체)
           { path: 'sites', element: <SiteListPage /> },
           { path: 'sites/:siteId', element: <SiteDetailPage /> },
+
+          // 타공 설정 바로가기 (전체, 개발자 페이지에서 팀별로 숨길 수 있음)
+          {
+            element: <RoleRoute menuKey="holeSetup" />,
+            children: [{ path: 'hole-setup', element: <HoleSetupPage /> }],
+          },
 
           // 결제 (팀장, 개발자)
           {
@@ -96,6 +104,12 @@ export const router = createBrowserRouter([
           {
             element: <RoleRoute menuKey="upcoming" />,
             children: [{ path: 'upcoming', element: <UpcomingPage /> }],
+          },
+
+          // 팀장 메뉴 (팀장, 개발자)
+          {
+            element: <RoleRoute menuKey="leader" />,
+            children: [{ path: 'leader', element: <LeaderPage /> }],
           },
 
           // 설정 (전체)

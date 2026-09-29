@@ -33,3 +33,9 @@ export async function setUserTeam({ userId, teamId }) {
   const { error } = await supabase.rpc('set_user_team', { target_user_id: userId, target_team_id: teamId })
   if (error) throw error
 }
+
+// 지금 보는 팀의 "타공 설정" 메뉴를 숨기거나 다시 보인다. 숨기면 개발자 자신에게도 안 보인다.
+export async function setHoleSetupMenuHidden({ hidden }) {
+  const { error } = await supabase.rpc('set_hole_setup_menu_hidden', { hidden })
+  if (error) throw error
+}
