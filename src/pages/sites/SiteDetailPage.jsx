@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import {
   addDefect,
   addUnitLog,
@@ -109,6 +109,11 @@ function formatCachedTime(iso) {
 export default function SiteDetailPage() {
   const { siteId } = useParams()
   const { user } = useAuth()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  // 타공 설정 메뉴에서 들어오면 그 메뉴로 돌아가는 링크를 띄운다
+  const backTo = location.state?.from ?? '/sites'
+  const backLabel = location.state?.fromLabel ?? '목록으로'
 
   const [sheet, setSheet] = useState({
     site: null,
@@ -132,7 +137,8 @@ export default function SiteDetailPage() {
   const [scale, setScale] = useState(1)
   const [horizontal, setHorizontal] = useState(loadHorizontal)
   const [sheetView, setSheetView] = useState('main') // 'main' | 'plaster'
-  const [bar, setBar] = useState('default') // 'default' | 'work' | 'defect' | 'option'
+  // 타공 설정 메뉴의 [옵션 지정]은 ?mode=option으로 들어와 바로 옵션 지정 모드로 연다
+  const [bar, setBar] = useState(() => (searchParams.get('mode') === 'option' ? 'option' : 'default')) // 'default' | 'work' | 'defect' | 'option'
   const [workSub, setWorkSub] = useState(null) // 'light' | 'laminate'
   // 타공 설정(현장 타입표·옵션표)과 세대별 옵션. 세대표와 따로 받아온다(오프라인 캐시 대상 아님).
   const [holeSetup, setHoleSetup] = useState({ types: [], options: [], unitOptions: {} })
@@ -813,8 +819,8 @@ export default function SiteDetailPage() {
 
   return (
     <div>
-      <Link to="/sites" className="back-btn">
-        ← 목록으로
+      <Link to={backTo} className="back-btn">
+        ← {backLabel}
       </Link>
       <h2 className="page-title">{sheet.site?.name ?? ''}</h2>
 

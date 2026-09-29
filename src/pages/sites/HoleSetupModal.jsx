@@ -28,7 +28,8 @@ function digitsOnly(value) {
   return value.replace(/[^0-9]/g, '')
 }
 
-export default function HoleSetupModal({ types, options, lineCountByType, optionUnitCount, saving, onClose, onSubmit }) {
+// siteName: 현장 밖(타공 설정 메뉴)에서 열 때 어느 현장인지 제목에 붙인다
+export default function HoleSetupModal({ siteName, types, options, lineCountByType, optionUnitCount, saving, onClose, onSubmit }) {
   const [typeRows, setTypeRows] = useState(() => types.map(toTypeRow))
   const [optionRows, setOptionRows] = useState(() => options.map(toOptionRow))
   const [removedTypeIds, setRemovedTypeIds] = useState([])
@@ -97,7 +98,7 @@ export default function HoleSetupModal({ types, options, lineCountByType, option
   }
 
   return (
-    <Modal title="타공 설정" wide onClose={onClose}>
+    <Modal title={siteName ? `타공 설정 · ${siteName}` : '타공 설정'} wide onClose={onClose}>
       <p className="text-secondary line-edit-hint">
         세대 타공 수 = 타입별 타공 수 + 그 세대에 지정한 옵션의 가감. 타공 수를 비워 두면 미설정으로 표시됩니다.
       </p>

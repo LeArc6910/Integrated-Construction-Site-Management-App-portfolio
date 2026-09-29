@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { generateTestData, resetTestData } from '../../api/dev'
-import { createTeam, listAllMembers, listTeams, setUserTeam, switchActiveTeam } from '../../api/teams'
+import { fetchHoleSetupOverview } from '../../api/holes'
+import {
+  createTeam,
+  listAllMembers,
+  listTeams,
+  setHoleSetupMenuHidden,
+  setUserTeam,
+  switchActiveTeam,
+} from '../../api/teams'
 import { useAuth } from '../../hooks/useAuth'
 
 function TeamSection() {
@@ -161,6 +169,73 @@ function TeamSection() {
   )
 }
 
+// 팀별로 켜고 끄는 메뉴. 지금은 "타공 설정" 하나뿐이다. 숨기면 개발자 자신을 포함해 그 팀 모두에게 안 보인다.
+function MenuToggleSection() {
+  const { user, refreshProfile } = useAuth()
+  const [unset, setUnset] = useState(null) // { units, sites } 지금 보는 팀의 미설정 세대
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let ignore = false
+    fetchHoleSetupOverview()
+      .then((sites) => {
+        if (ignore) return
+        const left = sites.filter((site) => site.unsetUnits > 0)
+        setUnset({ units: left.reduce((sum, site) => sum + site.unsetUnits, 0), sites: left.length })
+      })
+      .catch((err) => !ignore && setError(err.message))
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const hidden = user.hole_setup_menu_hidden
+
+  async function handleToggle() {
+    setBusy(true)
+    setError('')
+    try {
+      await setHoleSetupMenuHidden({ hidden: !hidden })
+      await refreshProfile()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <span className="section-label">메뉴 표시</span>
+      {error && (
+        <p className="auth-message error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="text-secondary dev-help">
+        <b>{user.current_team_name}</b> 팀에만 적용됩니다. 숨겨도 현장 세대표의 [관리] 메뉴에 있는 타공 설정·옵션 지정은
+        그대로 쓸 수 있습니다. 이미 앱을 열어 둔 사람은 앱을 다시 열면 반영됩니다.
+      </p>
+      <div className="dev-row">
+        <span>
+          타공 설정 메뉴: <b>{hidden ? '숨김' : '보임'}</b>
+        </span>
+        <button type="button" className="btn small" disabled={busy} onClick={handleToggle}>
+          {hidden ? '다시 보이기' : '숨기기'}
+        </button>
+        {unset && (
+          <span className="text-secondary">
+            {unset.units > 0
+              ? `미설정 ${unset.units.toLocaleString()}세대 남음 (현장 ${unset.sites}곳)`
+              : '모든 현장 설정 완료'}
+          </span>
+        )}
+      </div>
+    </>
+  )
+}
+
 export default function DevPage() {
   const { user } = useAuth()
   const [busy, setBusy] = useState(false)
@@ -200,6 +275,8 @@ export default function DevPage() {
       <h2 className="page-title">개발자 페이지</h2>
 
       <TeamSection />
+
+      <MenuToggleSection />
 
       <span className="section-label">테스트 데이터</span>
       {user.is_test_account ? (

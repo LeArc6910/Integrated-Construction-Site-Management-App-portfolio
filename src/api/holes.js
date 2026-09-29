@@ -143,40 +143,40 @@ export async function setUnitOption({ cells, optionId, value }) {
   if (failed) throw failed.error
 }
 
-// ---- 현장 타공 현황 (팀장 이상) ----
+// ---- 타공 현황·타공 설정 목록이 같이 쓰는 기초 데이터 ----
 
-// 현장별 전체/완료 타공 수와, 선택한 달의 인원별·일별 완료 타공 수를 한 번에 계산한다.
-// 세대표 현장 목록(computeCompletion)과 같이 필요한 행을 통째로 가져와 앱에서 집계한다.
-// 타공 수는 저장해 두지 않고 지금의 타입표·옵션으로 매번 다시 계산한다(나중에 고치면 지난 달도 바뀐다).
-export async function fetchHoleDashboard({ year, month }) {
-  const [sitesRes, buildingsRes, lines, typesRes, optionsRes, unitOptionRows, checks, names] = await Promise.all([
+// 보관되지 않은 현장의 세대표(동·라인)와 타입표·옵션표, 세대별 옵션을 통째로 받아 현장 기준으로 묶는다.
+// 세대표를 공유하는 현장은 동이 원본에 달려 있어 원본 현장(owners) 기준으로 한 번만 센다.
+async function fetchHoleBase() {
+  const [sitesRes, buildingsRes, lines, typesRes, optionsRes, unitOptionRows] = await Promise.all([
     supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null).order('name'),
     supabase.from('buildings').select('id, site_id'),
     fetchAllRows(() => supabase.from('building_lines').select('building_id, line_no, min_floor, max_floor, unit_type')),
-    supabase.from('site_unit_types').select('site_id, name, hole_count'),
-    supabase.from('site_unit_options').select('id, hole_delta'),
+    supabase.from('site_unit_types').select('id, site_id, name, hole_count').order('sort_order').order('name'),
+    supabase.from('site_unit_options').select('id, site_id, name, hole_delta').order('sort_order').order('name'),
     fetchAllRows(() => supabase.from('unit_options').select('building_id, line_no, floor, option_id')),
-    // 석고 시공 세대표는 별도 확인용이라 타공 계산에서 뺀다
-    fetchAllRows(() =>
-      supabase
-        .from('unit_checks')
-        .select('building_id, line_no, floor, light, light_by, light_at, laminate, laminate_by, laminate_at')
-        .eq('sheet', 'main')
-    ),
-    fetchUserNames(),
   ])
   const error = sitesRes.error || buildingsRes.error || typesRes.error || optionsRes.error
   if (error) throw error
 
-  // 세대표를 공유하는 현장은 동이 원본에 달려 있어 원본 기준으로 한 번만 센다
-  const siteById = Object.fromEntries(sitesRes.data.map((site) => [site.id, site]))
-  const owners = sitesRes.data.filter((site) => (site.sheet_source_id ?? site.id) === site.id)
+  const sites = sitesRes.data
+  const siteById = Object.fromEntries(sites.map((site) => [site.id, site]))
+  const owners = sites.filter((site) => (site.sheet_source_id ?? site.id) === site.id)
   const siteIdByBuilding = Object.fromEntries(buildingsRes.data.map((b) => [b.id, b.site_id]))
 
+  const typesBySite = {}
   const typeHolesBySite = {}
   typesRes.data.forEach((type) => {
+    if (!typesBySite[type.site_id]) typesBySite[type.site_id] = []
     if (!typeHolesBySite[type.site_id]) typeHolesBySite[type.site_id] = {}
+    typesBySite[type.site_id].push(type)
     typeHolesBySite[type.site_id][type.name] = type.hole_count
+  })
+
+  const optionsBySite = {}
+  optionsRes.data.forEach((option) => {
+    if (!optionsBySite[option.site_id]) optionsBySite[option.site_id] = []
+    optionsBySite[option.site_id].push(option)
   })
   const optionDeltas = Object.fromEntries(optionsRes.data.map((option) => [option.id, option.hole_delta]))
 
@@ -186,6 +186,100 @@ export async function fetchHoleDashboard({ year, month }) {
     if (!optionIdsByCell[key]) optionIdsByCell[key] = []
     optionIdsByCell[key].push(row.option_id)
   })
+
+  return {
+    sites,
+    siteById,
+    owners,
+    buildings: buildingsRes.data,
+    siteIdByBuilding,
+    lines,
+    typesBySite,
+    typeHolesBySite,
+    optionsBySite,
+    optionDeltas,
+    unitOptionRows,
+    optionIdsByCell,
+  }
+}
+
+// 세대표를 공유받는 현장 이름들(원본 현장 카드에 "공유" 표시용)
+function sharedWithOf(sites, ownerId) {
+  return sites.filter((s) => s.sheet_source_id === ownerId).map((s) => s.name)
+}
+
+// ---- 타공 설정 목록 (메뉴 "타공 설정", 전체) ----
+
+// 현장마다 타입표·옵션표와 설정 상태(미설정 세대 수)를 돌려준다. 현장을 들어가지 않고도 타공 설정
+// 모달을 바로 열 수 있게, 모달이 보여주는 사용 현황(타입별 라인 수, 옵션별 세대 수)과 저장에 필요한
+// 동 id도 같이 담는다. 미설정 세대가 남은 현장이 앞에 온다.
+export async function fetchHoleSetupOverview() {
+  const base = await fetchHoleBase()
+
+  const stats = {}
+  base.owners.forEach((site) => {
+    stats[site.id] = {
+      id: site.id,
+      name: site.name,
+      sharedWith: sharedWithOf(base.sites, site.id),
+      buildingIds: [],
+      types: base.typesBySite[site.id] ?? [],
+      options: base.optionsBySite[site.id] ?? [],
+      lineCountByType: {},
+      optionUnitCount: {},
+      totalUnits: 0,
+      unsetUnits: 0,
+    }
+  })
+  base.buildings.forEach((building) => stats[building.site_id]?.buildingIds.push(building.id))
+
+  base.lines.forEach((line) => {
+    const site = stats[base.siteIdByBuilding[line.building_id]]
+    if (!site) return
+    const name = line.unit_type?.trim()
+    if (name) site.lineCountByType[name] = (site.lineCountByType[name] ?? 0) + 1
+
+    const typeHoles = base.typeHolesBySite[site.id] ?? {}
+    for (let floor = line.min_floor ?? 1; floor <= line.max_floor; floor++) {
+      const holes = unitHoleCount({
+        unitType: line.unit_type,
+        optionIds: base.optionIdsByCell[cellKey(line.building_id, line.line_no, floor)],
+        typeHoles,
+        optionDeltas: base.optionDeltas,
+      })
+      site.totalUnits += 1
+      if (holes == null) site.unsetUnits += 1
+    }
+  })
+
+  base.unitOptionRows.forEach((row) => {
+    const site = stats[base.siteIdByBuilding[row.building_id]]
+    if (site) site.optionUnitCount[row.option_id] = (site.optionUnitCount[row.option_id] ?? 0) + 1
+  })
+
+  // 현장 이름순(조회 순서)을 유지한 채 미설정이 남은 현장만 앞으로 뺀다
+  const list = Object.values(stats).filter((site) => site.totalUnits > 0)
+  return [...list.filter((site) => site.unsetUnits > 0), ...list.filter((site) => site.unsetUnits === 0)]
+}
+
+// ---- 현장 타공 현황 (팀장 이상) ----
+
+// 현장별 전체/완료 타공 수와, 선택한 달의 인원별·일별 완료 타공 수를 한 번에 계산한다.
+// 세대표 현장 목록(computeCompletion)과 같이 필요한 행을 통째로 가져와 앱에서 집계한다.
+// 타공 수는 저장해 두지 않고 지금의 타입표·옵션으로 매번 다시 계산한다(나중에 고치면 지난 달도 바뀐다).
+export async function fetchHoleDashboard({ year, month }) {
+  const [base, checks, names] = await Promise.all([
+    fetchHoleBase(),
+    // 석고 시공 세대표는 별도 확인용이라 타공 계산에서 뺀다
+    fetchAllRows(() =>
+      supabase
+        .from('unit_checks')
+        .select('building_id, line_no, floor, light, light_by, light_at, laminate, laminate_by, laminate_at')
+        .eq('sheet', 'main')
+    ),
+    fetchUserNames(),
+  ])
+  const { sites, siteById, owners, siteIdByBuilding, lines, typeHolesBySite, optionDeltas, optionIdsByCell } = base
 
   const checkByCell = {}
   checks.forEach((check) => {
@@ -199,7 +293,7 @@ export async function fetchHoleDashboard({ year, month }) {
     siteStats[site.id] = {
       id: site.id,
       name: site.name,
-      sharedWith: sitesRes.data.filter((s) => s.sheet_source_id === site.id).map((s) => s.name),
+      sharedWith: sharedWithOf(sites, site.id),
       totalUnits: 0,
       doneUnits: 0,
       totalHoles: 0,

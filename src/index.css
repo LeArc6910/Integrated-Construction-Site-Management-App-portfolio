@@ -945,6 +945,85 @@ input[type='date'] {
   color: var(--red);
 }
 
+/* 팀 공지: 모든 화면 맨 위. 스크롤하면 같이 올라간다(세대표 드래그 영역을 가리지 않게) */
+.notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 6px 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.notice-banner-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.notice-banner-body {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.notice-banner-close {
+  flex-shrink: 0;
+  display: flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* 팀장 메뉴: 공지 */
+.leader-notice-current {
+  max-width: 560px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.leader-notice-body {
+  margin: 0 0 6px;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.leader-notice-meta {
+  font-size: 12px;
+}
+
+.leader-notice-form {
+  max-width: 560px;
+}
+
+.leader-notice-form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.leader-notice-count {
+  margin-right: auto;
+  font-size: 12px;
+}
+
+.leader-notice-count.over {
+  color: var(--red);
+}
+
 /* 세대표를 다른 현장과 함께 쓰는 중임을 알리는 배너 */
 .share-banner {
   margin: 0 0 12px;
@@ -1716,6 +1795,11 @@ input[type='date'] {
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* 타공 설정 메뉴: 현장 카드의 [타공 설정][옵션 지정] */
+.hole-setup-actions {
+  gap: 6px;
 }
 
 .hole-progress {

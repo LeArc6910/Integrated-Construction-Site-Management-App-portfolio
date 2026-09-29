@@ -38,14 +38,16 @@ export async function signOut() {
 }
 
 // current_team_id: 지금 보고 있는 팀(개발자는 전환한 팀, 그 외는 소속 팀). 화면에 팀 이름을 띄우려고
-// 팀 목록도 함께 받아 이름을 붙인다.
+// 팀 목록도 함께 받아 이름을 붙인다. 보는 팀의 설정(메뉴 숨김 등)도 같이 받아 메뉴 표시에 쓴다.
 export async function fetchProfile(userId) {
-  const [profileRes, teamsRes] = await Promise.all([
+  const [profileRes, teamsRes, settingsRes] = await Promise.all([
     supabase.from('profiles').select('name, phone, role, is_test_account, team_id, active_team_id').eq('id', userId).single(),
     supabase.rpc('list_teams'),
+    supabase.rpc('team_settings'),
   ])
   if (profileRes.error) throw profileRes.error
   if (teamsRes.error) throw teamsRes.error
+  if (settingsRes.error) throw settingsRes.error
 
   const profile = profileRes.data
   const nameById = Object.fromEntries(teamsRes.data.map((team) => [team.id, team.name]))
@@ -55,6 +57,7 @@ export async function fetchProfile(userId) {
     team_name: nameById[profile.team_id] ?? '',
     current_team_id: currentTeamId,
     current_team_name: nameById[currentTeamId] ?? '',
+    hole_setup_menu_hidden: settingsRes.data[0]?.hole_setup_menu_hidden ?? false,
   }
 }
 

@@ -6,6 +6,45 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.10] - 2026-09-29
+
+### 추가
+
+- **팀장 메뉴 · 공지**(팀장·개발자 메뉴): 공지를 올리면 같은 팀 모두에게 모든 화면 맨 위에 보인다.
+  팀마다 공지는 하나이고, 새로 올리면 이전 공지를 바꾸며 [공지 내리기]로 없앤다. 각자 공지를 닫을 수
+  있고 닫은 공지는 앱을 다시 켜기 전까지만 숨는다(기기별). 내용을 고쳐 다시 올리면 닫아 둔 사람에게도
+  다시 뜬다. 공지는 앱을 열 때와 앱으로 돌아올 때 다시 받는다. 최대 500자, 줄바꿈 유지.
+- **타공 설정 메뉴**(전체): 현장관리 → 현장 → 관리 안에 있던 타공 설정·옵션 지정으로 바로 가는 메뉴.
+  현장마다 미설정 세대 수·타입·옵션 개수를 보여주고 미설정이 남은 현장을 위에 둔다. [타공 설정]은
+  그 자리에서 바로 열리고, [옵션 지정]은 그 현장 세대표를 옵션 지정 모드로 연다(돌아가기 링크는 타공
+  설정 메뉴로). 세대표를 공유하는 현장은 원본 현장 하나로만 나온다. 현장 안의 관리 메뉴는 그대로다.
+- **개발자 페이지 · 메뉴 표시**: 지금 보는 팀의 타공 설정 메뉴를 숨기거나 다시 보인다. 숨기면 개발자를
+  포함해 그 팀 모두에게 안 보이고 주소로 직접 들어와도 막힌다. 판단에 쓰도록 그 팀의 미설정 세대 수를
+  옆에 보여준다.
+
+### 보안
+
+- **로그인하지 않은 호출이 개발자·팀장 전용 DB 함수를 실행할 수 있던 문제**를 막았다. 앱에 들어 있는
+  공개 키만으로 전체 인원 목록 조회(`list_all_members`), 팀 생성(`create_team`), 사용자 팀 이동
+  (`set_user_team`)이 가능했다(운영 DB에서 트랜잭션 안에서 재현 후 롤백해 확인). 원인은 Supabase가 함수에
+  기본으로 주는 anon 실행 권한이 남아 있었던 것과, 비로그인일 때 `is_dev()`/`is_manager()`가 false가
+  아니라 null을 돌려줘 `if not is_dev()` 검사를 지나친 것. `is_dev()`/`is_manager()`가 false를 돌려주게
+  하고, 로그인해야 쓰는 함수에서 anon 실행 권한을 회수했다. 앞으로 만드는 함수에도 anon 권한이 저절로
+  붙지 않는다. 가입 화면이 쓰는 `list_teams`는 그대로 열려 있다.
+
+### 참고
+
+- DB 스키마 변경 있음(`20260929010000_team_notice_and_menu_toggle.sql`): `team_notices` 테이블(팀당
+  한 행, 조회는 팀원 전체·쓰기는 `set_team_notice`/`clear_team_notice` 함수로 팀장 이상만),
+  `teams.hole_setup_menu_hidden` 컬럼과 `team_settings`/`set_hole_setup_menu_hidden` 함수.
+  **새 앱은 로그인할 때 `team_settings`를 부르므로 배포 전에 DB에 먼저 올려야 한다.** 추가만 있어서
+  1.0.9 앱에 먼저 올려도 영향이 없다.
+- 보안 수정 마이그레이션 `20260929020000_anon_function_hardening.sql`. 로그인 전에 불러야 하는 함수를 새로
+  만들면 `grant execute ... to anon`을 직접 적어야 한다.
+- 두 마이그레이션 모두 2026-09-29 운영·데모 DB에 적용 완료(운영은 역할별 권한 시나리오를 트랜잭션 안에서
+  검증한 뒤).
+- 타공 현황과 타공 설정 목록이 같은 조회(`fetchHoleBase`)를 쓰도록 정리했다. 타공 현황 계산은 그대로다.
+
 ## [1.0.9] - 2026-09-28
 
 ### 변경
@@ -382,6 +421,7 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.10]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.10
 [1.0.9]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.9
 [1.0.8]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.8
 [1.0.7]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.7
