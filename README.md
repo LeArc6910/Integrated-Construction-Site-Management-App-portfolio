@@ -131,8 +131,10 @@ npm run dev
 
 ## 배포
 
-`main`에 푸시하면 Cloudflare Workers Builds가 빌드해서 데모 사이트에 반영합니다.
-별도로 `wrangler deploy`를 실행할 필요는 없습니다.
+데모 사이트는 Cloudflare Pages 프로젝트(`construction-site-app-demo`)에 직접 업로드합니다.
+GitHub 연동이 아니라서 `main`에 푸시해도 자동으로 반영되지 않습니다. 원본을 동기화해 커밋·푸시한 뒤
+`bash scripts/deploy-pages.sh`를 실행하면 빌드 → 번들에 데모 프로젝트 주소만 있는지 확인 → 배포까지
+한 번에 합니다.
 
 빌드에 쓰는 Supabase 값은 `.env.production`에 들어 있습니다. 데모 전용 프로젝트의 URL과
 publishable 키라 이미 공개된 번들에 드러나는 값이고, 저장소에 고정해두면 어디서 빌드하든
