@@ -1,7 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
+  // 예전 데모 배포(Workers Builds) 설정. 데모 사이트는 Cloudflare Pages(scripts/deploy-pages.sh)로 옮겼다.
+  // workers.dev 주소에 계정 이름이 들어가서 공개 주소를 끄고, Worker는 주소 없이만 남겨 둔다.
   "name": "integrated-construction-site-management-app-portfolio",
   "compatibility_date": "2026-09-11",
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"

@@ -114,7 +114,8 @@ cat <<'MSG'
 검증을 모두 통과했습니다. 이어서 할 일:
 
   git add -A && git commit -m "운영 저장소 변경분 반영"
-  git push   # main에 올라가면 Cloudflare Workers Builds가 알아서 배포한다
+  git push
+  bash scripts/deploy-pages.sh   # 데모 사이트(Cloudflare Pages)는 자동 배포가 아니라 이걸로 올린다
 
 README의 스크린샷이 낡지 않았는지도 확인하세요. 화면이 바뀌었다면 docs/img/를 갱신해야
 합니다.
