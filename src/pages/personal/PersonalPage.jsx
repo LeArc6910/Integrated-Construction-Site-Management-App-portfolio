@@ -5,6 +5,7 @@ const TABS = [
   { to: '/personal/dashboard', label: '대시보드' },
   { to: '/personal/attendance', label: '출근체크' },
   { to: '/personal/report', label: '작업보고' },
+  { to: '/personal/holes', label: '타공 내역' },
   { to: '/personal/expense', label: '지출비용' },
   { to: '/personal/salary', label: '급여' },
 ]

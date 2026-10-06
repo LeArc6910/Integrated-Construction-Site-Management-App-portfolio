@@ -28,6 +28,7 @@ import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
 import { unitHoleCount } from '../../lib/holes'
 import { isCrcOwner } from '../../lib/siteMode'
+import { unitNumber } from '../../lib/unitSheetLayout'
 import MenuButton from '../../components/MenuButton'
 import { enqueueWrite } from '../../lib/offlineQueue'
 import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileName } from '../../lib/unitSheetImage'
@@ -36,6 +37,7 @@ import CellPanel from './CellPanel'
 import ChecklistPanel from './ChecklistPanel'
 import DefectAddModal from './DefectAddModal'
 import HoleSetupModal from './HoleSetupModal'
+import PastCheckConfirmModal from './PastCheckConfirmModal'
 import SectionEditModal from './SectionEditModal'
 import SheetShareModal from './SheetShareModal'
 import UnitSheetTable from './UnitSheetTable'
@@ -97,6 +99,22 @@ function saveHorizontal(value) {
   }
 }
 
+// 체크된 시각이 오늘(기기 날짜) 이전인지. 이전 작업을 해제할 때만 확인 창을 띄운다.
+function checkedBeforeToday(iso) {
+  if (!iso) return false
+  const at = new Date(iso)
+  const now = new Date()
+  return (
+    new Date(at.getFullYear(), at.getMonth(), at.getDate()) < new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  )
+}
+
+// 확인 창에 보여줄 세대 이름. 예: '9/28 101동 1501호'
+function pastUnitLabel(buildingName, lineNo, floor, iso) {
+  const at = new Date(iso)
+  return `${at.getMonth() + 1}/${at.getDate()} ${buildingName} ${unitNumber(floor, lineNo)}호`
+}
+
 function pad2(n) {
   return String(n).padStart(2, '0')
 }
@@ -152,6 +170,8 @@ export default function SiteDetailPage() {
   const [sectionModal, setSectionModal] = useState(false)
   const [shareModal, setShareModal] = useState(false)
   const [holeModal, setHoleModal] = useState(false)
+  // 이전 날짜 작업을 해제하기 전 확인 창. { units: [{ label }], run: 확인했을 때 할 일 }
+  const [pastConfirm, setPastConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const sheetOwner = sheet.ownerId ?? siteId
@@ -301,7 +321,7 @@ export default function SiteDetailPage() {
 
   // 드래그로 고른 칸들(cells[0]은 처음 누른 칸)을 한 번에 칠하거나 지운다. 한 칸만 탭한
   // 경우도 칸이 하나인 드래그로 들어와서 같은 경로를 탄다.
-  async function handleCellsCheck(building, cells) {
+  async function handleCellsCheck(building, cells, { confirmed = false } = {}) {
     if (!workSub || cells.length === 0) return
     setError('')
     setNotice('')
@@ -323,6 +343,20 @@ export default function SiteDetailPage() {
       })
       .filter((cell) => Boolean(cell.prev?.[field]) !== next)
     if (targets.length === 0) return
+
+    // 메인 세대표에서 오늘 이전에 완료한 칸을 해제하면 한 번 확인한다(석고 시공 세대표는 묻지 않는다)
+    if (!next && !confirmed && sheetView === 'main') {
+      const past = targets.filter((cell) => checkedBeforeToday(cell.prev?.[`${field}_at`]))
+      if (past.length > 0) {
+        setPastConfirm({
+          units: past.map((cell) => ({
+            label: pastUnitLabel(building.name, cell.lineNo, cell.floor, cell.prev[`${field}_at`]),
+          })),
+          run: () => handleCellsCheck(building, cells, { confirmed: true }),
+        })
+        return
+      }
+    }
     const now = new Date().toISOString()
 
     if (!navigator.onLine) {
@@ -384,13 +418,29 @@ export default function SiteDetailPage() {
     }
   }
 
-  async function handleClearCheck() {
+  // 정보창의 [체크 취소]에서 불린다. 클릭 이벤트가 넘어오므로 확인 여부는 confirmed === true로만 본다.
+  async function handleClearCheck(options) {
     setError('')
     setNotice('')
     const key = checkKey(panel.buildingId, panel.lineNo, panel.floor, sheetView)
     const cleared = crc ? 'CRC 해제' : '경량/합지 해제'
     const detail = sheetView === 'plaster' ? `석고 시공 · ${cleared}` : cleared
     const prev = sheet.checks[key] ?? null
+
+    if (options?.confirmed !== true && sheetView === 'main' && prev) {
+      // 경량·합지 중 오늘 이전에 체크된 쪽이 하나라도 있으면 확인한다(날짜는 더 이른 쪽을 보여준다)
+      const pastAt = ['light', 'laminate']
+        .filter((field) => prev[field] && checkedBeforeToday(prev[`${field}_at`]))
+        .map((field) => prev[`${field}_at`])
+        .sort()[0]
+      if (pastAt) {
+        setPastConfirm({
+          units: [{ label: pastUnitLabel(panel.buildingName, panel.lineNo, panel.floor, pastAt) }],
+          run: () => handleClearCheck({ confirmed: true }),
+        })
+        return
+      }
+    }
     const now = new Date().toISOString()
 
     if (!navigator.onLine) {
@@ -1084,6 +1134,17 @@ export default function SiteDetailPage() {
           saving={saving}
           onClose={() => setHoleModal(false)}
           onSubmit={handleSaveHoleSetup}
+        />
+      )}
+      {pastConfirm && (
+        <PastCheckConfirmModal
+          units={pastConfirm.units}
+          onCancel={() => setPastConfirm(null)}
+          onConfirm={() => {
+            const { run } = pastConfirm
+            setPastConfirm(null)
+            run()
+          }}
         />
       )}
       {shareModal && (

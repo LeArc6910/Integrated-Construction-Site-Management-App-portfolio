@@ -20,13 +20,12 @@ export function unitHoleCount({ unitType, optionIds = [], typeHoles, optionDelta
 // 타공 완료 세대의 완료 시각과 작업자. 완료 판정은 세대표와 같다(isUnitDone).
 // 일반 현장은 경량·합지가 둘 다 체크되어야 완료이므로, 나중에 체크된 쪽의 시각·작업자가 완료 기준이다.
 // 한 세대를 여럿이 나눠 작업하는 일은 없어서 작업자는 한 명으로 본다.
+// field: 완료를 만든 쪽 작업('light' | 'laminate'). 그 작업을 한 현장(*_site_id)을 찾을 때 쓴다.
 export function unitCompletion(check, crc) {
   if (!isUnitDone(check, crc)) return null
-  if (crc) return { at: check.light_at, by: check.light_by }
-  const laminateLater = (Date.parse(check.laminate_at) || 0) > (Date.parse(check.light_at) || 0)
-  return laminateLater
-    ? { at: check.laminate_at, by: check.laminate_by }
-    : { at: check.light_at, by: check.light_by }
+  const field =
+    crc || (Date.parse(check.light_at) || 0) >= (Date.parse(check.laminate_at) || 0) ? 'light' : 'laminate'
+  return { at: check[`${field}_at`], by: check[`${field}_by`], field }
 }
 
 // 한 달치 완료 세대 목록(work)을 인원별·일별로 묶는다. siteId를 주면 그 현장만 센다.

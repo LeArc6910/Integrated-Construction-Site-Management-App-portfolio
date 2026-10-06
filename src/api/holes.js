@@ -344,3 +344,108 @@ export async function fetchHoleDashboard({ year, month }) {
     names,
   }
 }
+
+// ---- 개인 > 타공 내역 (본인 것만) ----
+
+// 내가 완료한 세대의 한 달치 타공 수를 날짜별·현장별로 묶는다. 계산 규칙은 현장 타공 현황과 같다
+// (완료 = 세대표 완료, 완료한 날·사람 = 경량/합지 중 나중 체크, 타공 수는 지금 타입표·옵션으로 계산).
+// 팀 전체를 읽는 현황과 달리 내가 체크한 칸만 먼저 찾고, 그 동의 타입·옵션만 읽는다.
+// 현장은 그 체크를 한 현장 화면 기준이다(작업보고와 같음). 기록이 없으면 동이 달린 원본 현장이다.
+export async function fetchMyHoleWork({ userId, year, month }) {
+  const start = new Date(year, month - 1, 1).toISOString()
+  const end = new Date(year, month, 1).toISOString()
+
+  // 완료는 두 체크 중 나중 것이 기준이라, 둘 중 하나라도 이 달에 내가 한 칸을 모두 가져와 거른다
+  const checks = await fetchAllRows(() =>
+    supabase
+      .from('unit_checks')
+      .select(
+        'building_id, line_no, floor, light, light_by, light_at, light_site_id, laminate, laminate_by, laminate_at, laminate_site_id'
+      )
+      .eq('sheet', 'main')
+      .or(
+        `and(light.eq.true,light_by.eq.${userId},light_at.gte.${start},light_at.lt.${end}),` +
+          `and(laminate.eq.true,laminate_by.eq.${userId},laminate_at.gte.${start},laminate_at.lt.${end})`
+      )
+  )
+
+  const empty = { holes: 0, units: 0, unsetUnits: 0, days: [] }
+  const buildingIds = [...new Set(checks.map((check) => check.building_id))]
+  if (buildingIds.length === 0) return empty
+
+  const [buildingsRes, linesRes, unitOptionRows] = await Promise.all([
+    supabase.from('buildings').select('id, site_id').in('id', buildingIds),
+    supabase.from('building_lines').select('building_id, line_no, unit_type').in('building_id', buildingIds),
+    fetchAllRows(() =>
+      supabase.from('unit_options').select('building_id, line_no, floor, option_id').in('building_id', buildingIds)
+    ),
+  ])
+  const error = buildingsRes.error || linesRes.error
+  if (error) throw error
+
+  const siteIdByBuilding = Object.fromEntries(buildingsRes.data.map((b) => [b.id, b.site_id]))
+  const ownerIds = [...new Set(buildingsRes.data.map((b) => b.site_id))]
+  const workSiteIds = checks.flatMap((check) => [check.light_site_id, check.laminate_site_id]).filter(Boolean)
+  const siteIds = [...new Set([...ownerIds, ...workSiteIds])]
+
+  const [sitesRes, typesRes, optionsRes] = await Promise.all([
+    supabase.from('sites').select('id, name').in('id', siteIds),
+    supabase.from('site_unit_types').select('site_id, name, hole_count').in('site_id', ownerIds),
+    supabase.from('site_unit_options').select('id, hole_delta').in('site_id', ownerIds),
+  ])
+  const error2 = sitesRes.error || typesRes.error || optionsRes.error
+  if (error2) throw error2
+
+  const siteNameById = Object.fromEntries(sitesRes.data.map((s) => [s.id, s.name]))
+  const unitTypeByLine = Object.fromEntries(linesRes.data.map((l) => [`${l.building_id}-${l.line_no}`, l.unit_type]))
+  const typeHolesBySite = {}
+  typesRes.data.forEach((type) => {
+    if (!typeHolesBySite[type.site_id]) typeHolesBySite[type.site_id] = {}
+    typeHolesBySite[type.site_id][type.name] = type.hole_count
+  })
+  const optionDeltas = Object.fromEntries(optionsRes.data.map((option) => [option.id, option.hole_delta]))
+  const optionIdsByCell = {}
+  unitOptionRows.forEach((row) => {
+    const key = cellKey(row.building_id, row.line_no, row.floor)
+    if (!optionIdsByCell[key]) optionIdsByCell[key] = []
+    optionIdsByCell[key].push(row.option_id)
+  })
+
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}-`
+  const result = { ...empty }
+  const days = {}
+
+  checks.forEach((check) => {
+    const ownerId = siteIdByBuilding[check.building_id]
+    if (ownerId == null) return
+    // CRC 여부는 체크를 함께 쓰는 원본 현장 이름으로 정한다
+    const done = unitCompletion(check, isCrcSite(siteNameById[ownerId]))
+    if (!done || done.by !== userId) return
+    const date = localDateOf(done.at)
+    if (!date?.startsWith(monthPrefix)) return
+
+    const holes = unitHoleCount({
+      unitType: unitTypeByLine[`${check.building_id}-${check.line_no}`],
+      optionIds: optionIdsByCell[cellKey(check.building_id, check.line_no, check.floor)],
+      typeHoles: typeHolesBySite[ownerId] ?? {},
+      optionDeltas,
+    })
+    const siteId = check[`${done.field}_site_id`] ?? ownerId
+
+    if (!days[date]) days[date] = { date, holes: 0, units: 0, unsetUnits: 0, sites: {} }
+    const day = days[date]
+    if (!day.sites[siteId]) {
+      day.sites[siteId] = { id: siteId, name: siteNameById[siteId] ?? '알 수 없는 현장', holes: 0, units: 0, unsetUnits: 0 }
+    }
+    for (const target of [result, day, day.sites[siteId]]) {
+      target.units += 1
+      if (holes == null) target.unsetUnits += 1
+      else target.holes += holes
+    }
+  })
+
+  result.days = Object.values(days)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((day) => ({ ...day, sites: Object.values(day.sites).sort((a, b) => a.name.localeCompare(b.name)) }))
+  return result
+}
