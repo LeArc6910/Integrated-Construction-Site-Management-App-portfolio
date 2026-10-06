@@ -10,6 +10,7 @@ import AttendanceTab from './pages/personal/AttendanceTab'
 import ExpenseTab from './pages/personal/ExpenseTab'
 import WorkReportTab from './pages/personal/WorkReportTab'
 import SalaryTab from './pages/personal/SalaryTab'
+import HoleWorkTab from './pages/personal/HoleWorkTab'
 import SiteListPage from './pages/sites/SiteListPage'
 import SiteDetailPage from './pages/sites/SiteDetailPage'
 import PaymentPage from './pages/payment/PaymentPage'
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
               { path: 'dashboard', element: <DashboardTab /> },
               { path: 'attendance', element: <AttendanceTab /> },
               { path: 'report', element: <WorkReportTab /> },
+              { path: 'holes', element: <HoleWorkTab /> },
               { path: 'expense', element: <ExpenseTab /> },
               { path: 'salary', element: <SalaryTab /> },
             ],

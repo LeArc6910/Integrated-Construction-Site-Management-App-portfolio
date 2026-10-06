@@ -187,9 +187,19 @@ export async function fetchTodayWork({ userId, date = new Date() }) {
     .sort((a, b) => a.siteName.localeCompare(b.siteName))
 }
 
-// 빨간 테두리 대상: 오늘 내가 메인 세대표에서 경량 또는 합지를 체크한 세대
+// 빨간 테두리 대상: 고른 날 내가 메인 세대표에서 경량 또는 합지를 체크한 세대
 export function highlightKeysOf(site) {
   return new Set([...site.light, ...site.laminate].map((u) => `${u.buildingId}-${u.lineNo}-${u.floor}`))
+}
+
+// 지난 날짜 보고용 세대표: 그 날이 끝나는 시점까지 체크돼 있던 칸만 칠한다. 그 뒤에 한 작업이 칠해지면
+// 그날 보고가 실제와 다르게 보인다. 그 뒤에 해제된 칸은 지금 기록으로는 되살릴 수 없어 빠진다(드문 경우).
+export function checksAsOf(checks, date) {
+  const end = new Date(dayRange(date).end).getTime()
+  const done = (row, field) => Boolean(row[field]) && Date.parse(row[`${field}_at`]) < end
+  return Object.fromEntries(
+    Object.entries(checks).map(([key, row]) => [key, { ...row, light: done(row, 'light'), laminate: done(row, 'laminate') }])
+  )
 }
 
 function pad2(n) {

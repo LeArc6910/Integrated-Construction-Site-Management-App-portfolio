@@ -1576,6 +1576,18 @@ input[type='date'] {
   margin-bottom: 4px;
 }
 
+/* 작업보고 날짜 선택. 들어올 때는 항상 오늘이고, 지난 날짜를 고르면 아래 경고가 뜬다 */
+.report-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.report-past-warning {
+  margin: 0 0 10px;
+}
+
 .report-preview {
   overflow: auto;
   max-height: 60vh;
