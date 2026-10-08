@@ -6,6 +6,24 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.12] - 2026-10-08
+
+### 수정
+
+- **세대표에서 체크된 칸이 군데군데 빈칸으로 보이던 문제**: 체크가 1000건을 넘는 큰 현장(예: 체크가
+  2,050건인 현장)에서 경량·합지가 모두 체크된 칸이 색칠되지 않았다. DB의 체크는 그대로였고,
+  화면으로 불러올 때 빠진 것이다. 1000건씩 나눠 받으면서 정렬하지 않아, 페이지마다 DB가 다른
+  순서로 읽어 일부 행은 두 번 오고 일부는 아예 오지 않았다(이 현장은 708건 누락). 이제 항상 고유한
+  순서로 정렬해서 나눠 받는다.
+- 같은 방식으로 나눠 받던 화면도 함께 바로잡혔다: 작업보고, 현장 목록 완료율, 결제 완료 현장, 현장
+  타공 현황, 개인 타공 내역, 출근 집계(급여 세율 계산).
+
+### 참고
+
+- DB 변경(마이그레이션)은 없다. 배포 후 이미 열어 둔 앱은 한 번 새로고침해야 반영된다.
+- 이 문제로 빈칸을 보고 다시 체크한 석고 시공 칸(2026-10-08, 한 현장 47칸)은 작업 로그를 보고
+  원래 처리자·시각으로 되돌렸다.
+
 ## [1.0.11] - 2026-10-06
 
 ### 추가
@@ -446,6 +464,7 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.12]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.12
 [1.0.11]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.11
 [1.0.10]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.10
 [1.0.9]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App/releases/tag/v1.0.9

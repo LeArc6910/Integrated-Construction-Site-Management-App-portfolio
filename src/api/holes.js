@@ -3,6 +3,9 @@ import { isCrcSite } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
 import { cellKey, fetchUserNames } from './unitSheet'
 
+// unit_options는 id가 없어서, 나눠 읽을 때 기본 키 컬럼으로 정렬한다(fetchAllRows 참고)
+const UNIT_OPTION_KEY = ['building_id', 'line_no', 'floor', 'option_id']
+
 // ---- 현장 타입표·옵션표 (세대표 화면에서 관리) ----
 // 타입·옵션은 동과 같이 세대표 원본 현장에 달린다. siteId에는 항상 원본 현장 id를 넘긴다.
 
@@ -17,7 +20,8 @@ export async function fetchSiteHoleSetup({ siteId, buildingIds }) {
   const unitOptions = {}
   if (buildingIds.length > 0) {
     const rows = await fetchAllRows(() =>
-      supabase.from('unit_options').select('building_id, line_no, floor, option_id').in('building_id', buildingIds)
+      supabase.from('unit_options').select('building_id, line_no, floor, option_id').in('building_id', buildingIds),
+      UNIT_OPTION_KEY
     )
     rows.forEach((row) => {
       const key = cellKey(row.building_id, row.line_no, row.floor)
@@ -154,7 +158,7 @@ async function fetchHoleBase() {
     fetchAllRows(() => supabase.from('building_lines').select('building_id, line_no, min_floor, max_floor, unit_type')),
     supabase.from('site_unit_types').select('id, site_id, name, hole_count').order('sort_order').order('name'),
     supabase.from('site_unit_options').select('id, site_id, name, hole_delta').order('sort_order').order('name'),
-    fetchAllRows(() => supabase.from('unit_options').select('building_id, line_no, floor, option_id')),
+    fetchAllRows(() => supabase.from('unit_options').select('building_id, line_no, floor, option_id'), UNIT_OPTION_KEY),
   ])
   const error = sitesRes.error || buildingsRes.error || typesRes.error || optionsRes.error
   if (error) throw error
@@ -377,7 +381,8 @@ export async function fetchMyHoleWork({ userId, year, month }) {
     supabase.from('buildings').select('id, site_id').in('id', buildingIds),
     supabase.from('building_lines').select('building_id, line_no, unit_type').in('building_id', buildingIds),
     fetchAllRows(() =>
-      supabase.from('unit_options').select('building_id, line_no, floor, option_id').in('building_id', buildingIds)
+      supabase.from('unit_options').select('building_id, line_no, floor, option_id').in('building_id', buildingIds),
+      UNIT_OPTION_KEY
     ),
   ])
   const error = buildingsRes.error || linesRes.error
