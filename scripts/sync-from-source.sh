@@ -37,6 +37,11 @@ done
 rm -rf supabase/.temp supabase/.branches
 echo "  제거: supabase/.temp, supabase/.branches"
 
+# 원본 CHANGELOG의 릴리스 링크는 비공개인 운영 저장소를 가리켜서 밖에서는 열리지 않는다.
+# 이 사본의 릴리스 페이지(같은 태그 이름)를 가리키도록 저장소 이름만 바꾼다.
+sed -i 's#/Integrated-Construction-Site-Management-App/releases/tag/#/Integrated-Construction-Site-Management-App-portfolio/releases/tag/#g' CHANGELOG.md
+echo "  변환: CHANGELOG.md 릴리스 링크 → 이 저장소"
+
 # wrangler.jsonc는 Worker 이름이 달라야 하므로 덮어쓰지 않는다.
 echo "  유지: wrangler.jsonc, README.md, docs/img/ (사본 전용)"
 
