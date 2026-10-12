@@ -1,3 +1,4 @@
+import { cachedCall } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
 export const MIN_PASSWORD_LENGTH = 6
@@ -39,7 +40,14 @@ export async function signOut() {
 
 // current_team_id: 지금 보고 있는 팀(개발자는 전환한 팀, 그 외는 소속 팀). 화면에 팀 이름을 띄우려고
 // 팀 목록도 함께 받아 이름을 붙인다. 보는 팀의 설정(메뉴 숨김 등)도 같이 받아 메뉴 표시에 쓴다.
-export async function fetchProfile(userId) {
+//
+// 앱을 켤 때마다 불리므로, 서버가 늦거나 끊겼으면 마지막으로 받아 둔 권한 정보로 앱을 연다.
+// 저장해 둔 권한은 메뉴 표시에만 쓰이고, 실제 데이터 접근은 서버(RLS)가 그대로 막는다.
+export function fetchProfile(userId) {
+  return cachedCall(`profile:${userId}`, () => fetchProfileFromServer(userId), { wait: 3000, scoped: false })
+}
+
+async function fetchProfileFromServer(userId) {
   const [profileRes, teamsRes, settingsRes] = await Promise.all([
     supabase.from('profiles').select('name, phone, role, is_test_account, team_id, active_team_id').eq('id', userId).single(),
     supabase.rpc('list_teams'),

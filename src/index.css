@@ -935,6 +935,32 @@ input[type='date'] {
   color: var(--orange);
 }
 
+/* 연결 상태 알림: 저장해 둔 내용을 보여주는 중 / 최신 내용 도착 / 아직 못 보낸 기록 */
+.connection-banner {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.connection-banner p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.connection-banner p + p {
+  margin-top: 6px;
+}
+
+.connection-banner .btn {
+  flex-shrink: 0;
+}
+
 /* 개발자가 다른 팀 데이터를 보는 중임을 알리는 배너 */
 .team-view-banner {
   margin: 0 0 12px;

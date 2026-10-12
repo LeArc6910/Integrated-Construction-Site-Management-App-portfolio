@@ -1,9 +1,11 @@
+import { cached } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
 // 팀 공지는 팀마다 하나. 지금 보는 팀(current_team_id)의 공지만 RLS로 보인다.
 // 게시·내리기는 팀장·개발자만 할 수 있고, 게시 시각과 게시자는 DB 함수가 찍는다.
 
-export async function fetchTeamNotice() {
+export const fetchTeamNotice = cached('fetchTeamNotice', fetchTeamNoticeFromServer)
+async function fetchTeamNoticeFromServer() {
   const { data, error } = await supabase
     .from('team_notices')
     .select('team_id, body, updated_by, updated_at')

@@ -1,3 +1,4 @@
+import { cachedCall } from '../lib/cachedCall'
 import { isCrcSite } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
 import { inLine } from '../lib/unitSheetLayout'
@@ -47,7 +48,13 @@ function hasWork(site) {
 // 반환: 오늘 작업이 있는 현장 목록. 체크·미타공은 작업한 현장 화면 기준으로 묶는다. 세대표를 공유하면
 // 동은 원본 현장에 달려 있지만, 공유받은 현장에서 작업했으면 그 현장으로 보고한다. 작업한 현장이
 // 기록되지 않은 예전 기록(이전 버전 앱)은 동이 달린 원본 현장으로 묶는다.
-export async function fetchTodayWork({ userId, date = new Date() }) {
+// 서버가 늦거나 끊겼으면 그 날짜로 마지막에 받아 둔 내역을 보여준다. 키는 날짜(일 단위)로 만든다.
+export function fetchTodayWork({ userId, date = new Date() }) {
+  const day = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+  return cachedCall(`fetchTodayWork:${userId}:${day}`, () => fetchTodayWorkFromServer({ userId, date }))
+}
+
+async function fetchTodayWorkFromServer({ userId, date }) {
   const range = dayRange(date)
 
   const [checkRows, addedRes, resolvedRes, checklistRes] = await Promise.all([

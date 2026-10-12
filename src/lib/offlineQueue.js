@@ -111,6 +111,18 @@ const HANDLERS = {
 
 export async function enqueueWrite(kind, payload) {
   await idbPut(STORES.outbox, { clientId: payload.clientId, kind, payload, createdAt: new Date().toISOString() })
+  window.dispatchEvent(new Event(QUEUE_CHANGED))
+}
+
+// 전송 대기 건수가 바뀔 때 알린다(ConnectionBanner가 듣는다)
+export const QUEUE_CHANGED = 'offline-queue-changed'
+
+export async function pendingWriteCount() {
+  try {
+    return (await idbGetAll(STORES.outbox)).length
+  } catch {
+    return 0
+  }
 }
 
 let flushing = false
@@ -130,12 +142,25 @@ export async function flushQueue() {
     }
   } finally {
     flushing = false
-    if (syncedAny) window.dispatchEvent(new Event('offline-queue-flushed'))
+    if (syncedAny) {
+      window.dispatchEvent(new Event('offline-queue-flushed'))
+      window.dispatchEvent(new Event(QUEUE_CHANGED))
+    }
   }
 }
 
-window.addEventListener('online', () => {
+function retryFlush() {
   flushQueue().catch(() => {
-    // 실패한 항목은 큐에 그대로 남아 다음 online 이벤트 때 다시 시도된다
+    // 실패한 항목은 큐에 그대로 남아 다음 시도 때 다시 보낸다
   })
+}
+
+window.addEventListener('online', retryFlush)
+
+// 신호가 약한 곳에서는 브라우저가 계속 "온라인"이라고 해서 online 이벤트가 오지 않는다.
+// 그래서 쌓인 기록이 있으면 주기적으로, 그리고 앱으로 돌아왔을 때 다시 보내 본다.
+const RETRY_INTERVAL_MS = 30000
+setInterval(retryFlush, RETRY_INTERVAL_MS)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') retryFlush()
 })

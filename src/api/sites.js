@@ -1,8 +1,10 @@
+import { cached } from '../lib/cachedCall'
 import { isCrcSite, isUnitDone } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
 
 // 삭제된 현장은 archived_at에 보관 시각이 찍힌다. 목록은 항상 사용 중인 현장만 보여준다.
-export async function fetchSites() {
+export const fetchSites = cached('fetchSites', fetchSitesFromServer)
+async function fetchSitesFromServer() {
   const { data, error } = await supabase.from('sites').select('id, name').is('archived_at', null).order('name')
   if (error) throw error
   return data
@@ -77,7 +79,8 @@ export async function fetchSiteStatusMap() {
   )
 }
 
-export async function fetchSiteList({ userId }) {
+export const fetchSiteList = cached('fetchSiteList', fetchSiteListFromServer)
+async function fetchSiteListFromServer({ userId }) {
   const [sitesRes, defectsRes, favoritesRes] = await Promise.all([
     supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null),
     supabase.from('defects').select('building_id, line_no, floor').eq('resolved', false),

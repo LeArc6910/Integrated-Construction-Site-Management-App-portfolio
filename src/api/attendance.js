@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
 function pad2(n) {
@@ -14,7 +15,8 @@ function monthRange(year, month) {
 
 // 반환값: { [date]: [{ id, siteId, siteName, hours, half }, ...] }
 // 하루에 FULL(하루 종일) 하나 또는 AM/PM(반일) 최대 둘까지 있을 수 있다.
-export async function fetchMonthAttendance({ userId, year, month }) {
+export const fetchMonthAttendance = cached('fetchMonthAttendance', fetchMonthAttendanceFromServer)
+async function fetchMonthAttendanceFromServer({ userId, year, month }) {
   const { from, to } = monthRange(year, month)
   const { data, error } = await supabase
     .from('attendances')

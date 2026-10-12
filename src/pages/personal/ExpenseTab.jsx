@@ -13,6 +13,7 @@ import CalendarNav from '../../components/CalendarNav'
 import Modal from '../../components/Modal'
 import { useAuth } from '../../hooks/useAuth'
 import { usePeriod } from '../../hooks/usePeriod'
+import { isNetworkError } from '../../lib/cachedCall'
 import { enqueueWrite } from '../../lib/offlineQueue'
 
 const ROW_COLUMNS = '0.9fr 1fr 1.3fr 0.9fr 0.9fr'
@@ -113,10 +114,12 @@ export default function ExpenseTab() {
     setSaving(true)
     try {
       const amount = parseInt(form.amount, 10) || 0
+      // 온라인 시도와 대기 큐가 같은 id를 써야, 저장은 됐는데 응답만 못 받은 경우에도 중복되지 않는다
+      const clientId = crypto.randomUUID()
 
       // 오프라인이면 영수증 파일(있다면)까지 통째로 큐에 담아두고, 온라인이 되면
       // offlineQueue가 영수증 업로드 → 지출 저장 순서로 대신 처리한다.
-      if (modalMode === 'add' && !navigator.onLine) {
+      const saveOffline = async () => {
         await enqueueWrite('expense', {
           userId: user.id,
           date: form.date,
@@ -124,16 +127,29 @@ export default function ExpenseTab() {
           content: form.content,
           amount,
           receiptFile: form.receiptFile,
-          clientId: crypto.randomUUID(),
+          clientId,
         })
         closeModal()
-        setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+        setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
+      }
+      if (modalMode === 'add' && !navigator.onLine) {
+        await saveOffline()
         return
       }
 
-      const receiptPath = form.receiptFile
-        ? await uploadReceipt({ userId: user.id, file: form.receiptFile })
-        : (modalMode !== 'add' && modalMode.receiptPath) || null
+      // 새 지출은 신호가 약해 전송이 끊기면 대기 큐로 돌린다. 수정은 큐에 담지 않고 오류로 알린다.
+      let receiptPath
+      try {
+        receiptPath = form.receiptFile
+          ? await uploadReceipt({ userId: user.id, file: form.receiptFile })
+          : (modalMode !== 'add' && modalMode.receiptPath) || null
+      } catch (err) {
+        if (modalMode === 'add' && isNetworkError(err)) {
+          await saveOffline()
+          return
+        }
+        throw err
+      }
 
       const payload = {
         date: form.date,
@@ -144,7 +160,13 @@ export default function ExpenseTab() {
       }
 
       if (modalMode === 'add') {
-        await addExpense({ userId: user.id, ...payload, clientId: crypto.randomUUID() })
+        try {
+          await addExpense({ userId: user.id, ...payload, clientId })
+        } catch (err) {
+          if (!isNetworkError(err)) throw err
+          await saveOffline()
+          return
+        }
       } else {
         await updateExpense({ id: modalMode.id, ...payload })
         if (form.receiptFile && modalMode.receiptPath) await deleteReceipt(modalMode.receiptPath)

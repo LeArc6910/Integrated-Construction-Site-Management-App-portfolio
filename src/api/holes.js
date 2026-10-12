@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { unitCompletion, unitHoleCount, localDateOf } from '../lib/holes'
 import { isCrcSite } from '../lib/siteMode'
 import { fetchAllRows, supabase } from '../lib/supabase'
@@ -9,7 +10,8 @@ const UNIT_OPTION_KEY = ['building_id', 'line_no', 'floor', 'option_id']
 // ---- 현장 타입표·옵션표 (세대표 화면에서 관리) ----
 // 타입·옵션은 동과 같이 세대표 원본 현장에 달린다. siteId에는 항상 원본 현장 id를 넘긴다.
 
-export async function fetchSiteHoleSetup({ siteId, buildingIds }) {
+export const fetchSiteHoleSetup = cached('fetchSiteHoleSetup', fetchSiteHoleSetupFromServer)
+async function fetchSiteHoleSetupFromServer({ siteId, buildingIds }) {
   const [typesRes, optionsRes] = await Promise.all([
     supabase.from('site_unit_types').select('id, name, hole_count').eq('site_id', siteId).order('sort_order').order('name'),
     supabase.from('site_unit_options').select('id, name, hole_delta').eq('site_id', siteId).order('sort_order').order('name'),
@@ -217,7 +219,8 @@ function sharedWithOf(sites, ownerId) {
 // 현장마다 타입표·옵션표와 설정 상태(미설정 세대 수)를 돌려준다. 현장을 들어가지 않고도 타공 설정
 // 모달을 바로 열 수 있게, 모달이 보여주는 사용 현황(타입별 라인 수, 옵션별 세대 수)과 저장에 필요한
 // 동 id도 같이 담는다. 미설정 세대가 남은 현장이 앞에 온다.
-export async function fetchHoleSetupOverview() {
+export const fetchHoleSetupOverview = cached('fetchHoleSetupOverview', fetchHoleSetupOverviewFromServer)
+async function fetchHoleSetupOverviewFromServer() {
   const base = await fetchHoleBase()
 
   const stats = {}
@@ -355,7 +358,8 @@ export async function fetchHoleDashboard({ year, month }) {
 // (완료 = 세대표 완료, 완료한 날·사람 = 경량/합지 중 나중 체크, 타공 수는 지금 타입표·옵션으로 계산).
 // 팀 전체를 읽는 현황과 달리 내가 체크한 칸만 먼저 찾고, 그 동의 타입·옵션만 읽는다.
 // 현장은 그 체크를 한 현장 화면 기준이다(작업보고와 같음). 기록이 없으면 동이 달린 원본 현장이다.
-export async function fetchMyHoleWork({ userId, year, month }) {
+export const fetchMyHoleWork = cached('fetchMyHoleWork', fetchMyHoleWorkFromServer)
+async function fetchMyHoleWorkFromServer({ userId, year, month }) {
   const start = new Date(year, month - 1, 1).toISOString()
   const end = new Date(year, month, 1).toISOString()
 

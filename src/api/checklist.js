@@ -1,6 +1,8 @@
+import { cached } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
-export async function fetchChecklist({ siteId }) {
+export const fetchChecklist = cached('fetchChecklist', fetchChecklistFromServer)
+async function fetchChecklistFromServer({ siteId }) {
   const { data, error } = await supabase
     .from('site_checklist_items')
     .select('id, content, checked, checked_by, checked_at, created_at')

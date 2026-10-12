@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { fetchAllRows, supabase } from '../lib/supabase'
 
 // 실급여로 입력하는 금액은 세금이 빠진 뒤 실제로 받은 돈이다. 급여(출근일수 × 단가)는 세금을
@@ -142,7 +143,8 @@ export async function fetchSalaryTotalsByUser({ year, month, siteId = null, user
 
 // 개인 화면(대시보드·급여 탭)용. 본인 한 사람의 그 달 실급여만 계산한다.
 // 입력된 건이 하나도 없으면 actual을 null(미입력)로 돌려준다.
-export async function fetchSalaryTotalsForUser({ userId, year, month }) {
+export const fetchSalaryTotalsForUser = cached('fetchSalaryTotalsForUser', fetchSalaryTotalsForUserFromServer)
+async function fetchSalaryTotalsForUserFromServer({ userId, year, month }) {
   const byUser = await fetchSalaryTotalsByUser({ year, month, userId })
   return byUser[userId] ?? { actual: null, gross: 0, entries: [] }
 }

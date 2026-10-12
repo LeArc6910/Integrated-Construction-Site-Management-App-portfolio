@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
 function pad2(n) {
@@ -12,7 +13,8 @@ function monthRange(year, month) {
   return { from, to }
 }
 
-export async function fetchMonthExpenses({ userId, year, month }) {
+export const fetchMonthExpenses = cached('fetchMonthExpenses', fetchMonthExpensesFromServer)
+async function fetchMonthExpensesFromServer({ userId, year, month }) {
   const { from, to } = monthRange(year, month)
   const { data, error } = await supabase
     .from('expenses')

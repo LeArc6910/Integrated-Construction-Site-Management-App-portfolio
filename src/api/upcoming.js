@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { supabase } from '../lib/supabase'
 
 function pad2(n) {
@@ -88,7 +89,8 @@ export async function deleteUpcomingSite({ id }) {
 
 // 개인 출근체크 달력에 어느 현장을 방문할 예정인지 같이 보여주기 위한 월별 조회.
 // 반환값: { 'YYYY-MM-DD': ['A 현장', 'B 현장'] }
-export async function fetchMonthVisits({ year, month }) {
+export const fetchMonthVisits = cached('fetchMonthVisits', fetchMonthVisitsFromServer)
+async function fetchMonthVisitsFromServer({ year, month }) {
   const { from, to } = monthRange(year, month)
   const { data, error } = await supabase
     .from('upcoming_visits')

@@ -30,6 +30,7 @@ import { unitHoleCount } from '../../lib/holes'
 import { isCrcOwner } from '../../lib/siteMode'
 import { unitNumber } from '../../lib/unitSheetLayout'
 import MenuButton from '../../components/MenuButton'
+import { isNetworkError } from '../../lib/cachedCall'
 import { enqueueWrite } from '../../lib/offlineQueue'
 import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileName } from '../../lib/unitSheetImage'
 import BuildingEditModal from './BuildingEditModal'
@@ -184,7 +185,8 @@ export default function SiteDetailPage() {
 
   useEffect(() => {
     let ignore = false
-    Promise.all([load(), fetchUserNames()])
+    // 처리자 이름은 못 받아도 세대표는 보여준다(이름 자리에 '알 수 없음'이 뜬다)
+    Promise.all([load(), fetchUserNames().catch(() => ({}))])
       .then(([sheetData, nameMap]) => {
         if (ignore) return
         setSheet(sheetData)
@@ -209,14 +211,15 @@ export default function SiteDetailPage() {
   const buildingIdsKey = sheet.buildings.map((building) => building.id).join(',')
 
   const reloadHoles = useCallback(async () => {
-    if (!sheet.ownerId || sheet.offline) return
+    if (!sheet.ownerId) return
     try {
       const buildingIds = buildingIdsKey ? buildingIdsKey.split(',').map(Number) : []
       setHoleSetup(await fetchSiteHoleSetup({ siteId: sheet.ownerId, buildingIds }))
     } catch (err) {
-      setError(err.message)
+      // 연결 문제로 타공 설정만 못 받은 경우는 세대표를 가리지 않게 조용히 넘어간다
+      if (!isNetworkError(err)) setError(err.message)
     }
-  }, [sheet.ownerId, sheet.offline, buildingIdsKey])
+  }, [sheet.ownerId, buildingIdsKey])
 
   useEffect(() => {
     reloadHoles()
@@ -359,7 +362,8 @@ export default function SiteDetailPage() {
     }
     const now = new Date().toISOString()
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       try {
         await enqueueWrite('unitCheck', {
           mode: 'set',
@@ -389,9 +393,10 @@ export default function SiteDetailPage() {
         })
         return { ...prev, checks }
       })
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       const rows = await setUnitChecks({
@@ -414,6 +419,8 @@ export default function SiteDetailPage() {
         await addUnitLogs({ cells: group.cells, sheet: sheetView, action, detail: group.detail, userId: user.id })
       }
     } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다(같은 내용을 다시 보내도 중복 저장되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
       setError(err.message)
     }
   }
@@ -443,7 +450,8 @@ export default function SiteDetailPage() {
     }
     const now = new Date().toISOString()
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       try {
         await enqueueWrite('unitCheck', {
           mode: 'clear',
@@ -464,9 +472,10 @@ export default function SiteDetailPage() {
       }
       const row = { ...prev, ...clearPatch(prev, now), updated_at: now }
       setSheet((current) => ({ ...current, checks: { ...current.checks, [key]: row } }))
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       const row = await clearUnitCheck({ ...panel, sheet: sheetView, prev, now })
@@ -474,6 +483,8 @@ export default function SiteDetailPage() {
       await addUnitLog({ ...panel, sheet: sheetView, action: '체크 취소', detail, userId: user.id })
       await refreshLogs()
     } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다(같은 내용을 다시 보내도 중복 저장되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
       setError(err.message)
     }
   }
@@ -483,13 +494,16 @@ export default function SiteDetailPage() {
     setSaving(true)
     setError('')
     setNotice('')
+    // 위치마다 요청 id를 미리 정해 둔다(온라인 시도와 대기 큐가 같은 id를 써야 중복 등록되지 않는다)
+    const clientIds = locations.map(() => crypto.randomUUID())
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       const key = cellKey(panel.buildingId, panel.lineNo, panel.floor)
       const pendingDefects = []
       try {
-        for (const location of locations) {
-          const clientId = crypto.randomUUID()
+        for (const [index, location] of locations.entries()) {
+          const clientId = clientIds[index]
           await enqueueWrite('defectAdd', {
             buildingId: panel.buildingId,
             lineNo: panel.lineNo,
@@ -520,22 +534,25 @@ export default function SiteDetailPage() {
         defects: { ...prev.defects, [key]: [...(prev.defects[key] ?? []), ...pendingDefects] },
       }))
       setDefectModal(false)
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       setSaving(false)
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       let lastDefect = null
-      for (const location of locations) {
+      for (const [index, location] of locations.entries()) {
         const defect = await addDefect({
           ...panel,
           locations: [location],
           content,
           userId: user.id,
           siteId: workSiteId,
-          clientId: crypto.randomUUID(),
+          clientId: clientIds[index],
         })
+        // 이미 등록된 요청(재시도)이면 행이 돌아오지 않는다. 로그도 다시 남기지 않는다.
+        if (!defect) continue
         await addUnitLog({
           ...panel,
           sheet: 'main',
@@ -550,6 +567,8 @@ export default function SiteDetailPage() {
       await reload()
       await refreshLogs()
     } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다(같은 내용을 다시 보내도 중복 저장되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
       setError(err.message)
     } finally {
       setSaving(false)
@@ -562,7 +581,8 @@ export default function SiteDetailPage() {
     const defect = currentDefects.find((item) => item.id === selectedDefectId)
     if (!defect || defect.pending) return
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       try {
         await enqueueWrite('defectResolve', {
           id: defect.id,
@@ -591,9 +611,10 @@ export default function SiteDetailPage() {
         },
       }))
       setSelectedDefectId(null)
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       await resolveDefect({ id: defect.id, userId: user.id, siteId: workSiteId })
@@ -608,6 +629,8 @@ export default function SiteDetailPage() {
       await reload()
       await refreshLogs()
     } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다(같은 내용을 다시 보내도 중복 저장되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
       setError(err.message)
     }
   }
@@ -618,7 +641,8 @@ export default function SiteDetailPage() {
     const defect = currentDefects.find((item) => item.id === selectedDefectId)
     if (!defect || defect.pending) return
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       try {
         await enqueueWrite('defectDelete', {
           id: defect.id,
@@ -639,9 +663,10 @@ export default function SiteDetailPage() {
         defects: { ...prev.defects, [key]: prev.defects[key].filter((item) => item.id !== defect.id) },
       }))
       setSelectedDefectId(null)
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       await deleteDefect({ id: defect.id })
@@ -656,6 +681,8 @@ export default function SiteDetailPage() {
       await reload()
       await refreshLogs()
     } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다(같은 내용을 다시 보내도 중복 저장되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
       setError(err.message)
     }
   }

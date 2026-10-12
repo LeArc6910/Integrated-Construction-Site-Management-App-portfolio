@@ -8,6 +8,7 @@ import Modal from '../../components/Modal'
 import { MANAGER_ROLES } from '../../constants/roles'
 import { useAuth } from '../../hooks/useAuth'
 import { usePeriod } from '../../hooks/usePeriod'
+import { isNetworkError } from '../../lib/cachedCall'
 import { enqueueWrite } from '../../lib/offlineQueue'
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토']
@@ -120,7 +121,8 @@ export default function AttendanceTab() {
     setNotice('')
     const clientId = crypto.randomUUID()
 
-    if (!navigator.onLine) {
+    // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
+    const saveOffline = async () => {
       try {
         await enqueueWrite('attendance', { userId: user.id, date: activeDate, siteId: newSiteId, half: newHalf, clientId })
       } catch (err) {
@@ -136,15 +138,24 @@ export default function AttendanceTab() {
           { id: clientId, siteId: newSiteId, siteName, hours, half: newHalf, pending: true },
         ],
       }))
-      setNotice('오프라인 상태라 임시 저장했습니다. 온라인이 되면 자동으로 전송됩니다.')
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       const remaining = availableHalves([...(attendance[activeDate] ?? []), { half: newHalf }])
       if (remaining.length === 0) setActiveDate(null)
       else setNewHalf(remaining[0])
       return
     }
+    if (!navigator.onLine) return saveOffline()
 
     try {
       await checkIn({ userId: user.id, date: activeDate, siteId: newSiteId, half: newHalf, clientId })
+    } catch (err) {
+      // 신호가 약해 요청이 끊기면 대기 큐로 돌린다(같은 clientId라 다시 보내도 중복되지 않는다)
+      if (isNetworkError(err)) return saveOffline()
+      setError(err.message)
+      return
+    }
+
+    try {
       await reload()
       const remaining = availableHalves([...(attendance[activeDate] ?? []), { half: newHalf }])
       if (remaining.length === 0) setActiveDate(null)

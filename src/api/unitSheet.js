@@ -1,4 +1,5 @@
-import { idbGet, idbPut, STORES } from '../lib/idb'
+import { cached, cachedCallInfo, isNetworkError } from '../lib/cachedCall'
+import { idbGet, STORES } from '../lib/idb'
 import { fetchAllRows, supabase } from '../lib/supabase'
 import { compareBuildingName } from '../lib/unitSheetLayout'
 import { sheetOwnerId } from './sheetSharing'
@@ -108,32 +109,27 @@ export async function fetchSiteSheet({ siteId }) {
   return { site, ownerId, ownerName, sharedWith, buildings, sections, checks, defects }
 }
 
-async function cacheSiteSheet(siteId, data) {
-  await idbPut(STORES.unitSheets, { siteId: String(siteId), data, cachedAt: new Date().toISOString() })
-}
-
-async function getCachedSiteSheet(siteId) {
-  return idbGet(STORES.unitSheets, String(siteId))
-}
-
-// 온라인이면 최신 세대표를 받아와 오프라인 대비용으로 캐시에 저장하고, 오프라인이면
-// 마지막으로 캐시된 데이터를 보여준다.
+// 세대표를 받아 기기에 저장해 두고, 서버가 늦거나 끊겼으면 마지막으로 저장한 세대표를 보여준다
+// (cachedCall 참고). offline이 true면 저장해 둔 내용이고, cachedAt은 그 내용을 받은 시각이다.
+// 신호가 약할 때도 저장해 둔 세대표가 바로 뜨도록, "끊겼는지"가 아니라 "제때 답이 왔는지"로 판단한다.
 export async function loadSiteSheet({ siteId }) {
-  if (navigator.onLine) {
-    const data = await fetchSiteSheet({ siteId })
-    await cacheSiteSheet(siteId, data)
-    return { ...data, offline: false, cachedAt: null }
+  try {
+    const { data, stale, cachedAt } = await cachedCallInfo(`siteSheet:${siteId}`, () => fetchSiteSheet({ siteId }))
+    return { ...data, offline: stale, cachedAt }
+  } catch (error) {
+    // 1.0.12까지는 세대표를 다른 저장소(unitSheets)에 넣어 두었다. 새 저장소에 아직 없으면 그걸 본다.
+    const legacy = isNetworkError(error) ? await idbGet(STORES.unitSheets, String(siteId)).catch(() => null) : null
+    if (legacy) return { ...legacy.data, offline: true, cachedAt: legacy.cachedAt }
+    if (isNetworkError(error)) {
+      throw new Error('연결이 원활하지 않고 저장된 세대표가 없습니다. 신호가 잡히는 곳에서 한 번 열어 두면 이후에는 볼 수 있습니다.')
+    }
+    throw error
   }
-
-  const cached = await getCachedSiteSheet(siteId)
-  if (!cached) {
-    throw new Error('오프라인 상태이며 저장된 세대표 데이터가 없습니다. 온라인 상태에서 한 번 이상 조회해주세요.')
-  }
-  return { ...cached.data, offline: true, cachedAt: cached.cachedAt }
 }
 
 // profiles는 본인·매니저만 조회할 수 있어서, 처리자 이름은 전용 함수로 받아온다.
-export async function fetchUserNames() {
+export const fetchUserNames = cached('fetchUserNames', fetchUserNamesFromServer)
+async function fetchUserNamesFromServer() {
   const { data, error } = await supabase.rpc('user_names')
   if (error) throw error
   return Object.fromEntries(data.map((row) => [row.id, row.name]))
@@ -291,7 +287,8 @@ export async function addUnitLog({ buildingId, lineNo, floor, sheet, action, det
   await addUnitLogs({ cells: [{ buildingId, lineNo, floor }], sheet, action, detail, userId })
 }
 
-export async function fetchCellLogs({ buildingId, lineNo, floor, sheet }) {
+export const fetchCellLogs = cached('fetchCellLogs', fetchCellLogsFromServer)
+async function fetchCellLogsFromServer({ buildingId, lineNo, floor, sheet }) {
   const { data, error } = await supabase
     .from('unit_logs')
     .select('id, action, detail, actor_id, created_at')

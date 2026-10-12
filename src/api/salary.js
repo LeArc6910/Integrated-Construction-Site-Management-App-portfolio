@@ -1,3 +1,4 @@
+import { cached } from '../lib/cachedCall'
 import { deleteReceipt } from './expense'
 import { supabase } from '../lib/supabase'
 
@@ -8,7 +9,8 @@ import { supabase } from '../lib/supabase'
 // 조회와 계산을 떼어놓으면 화면마다 기준이 어긋난다). 여기에는 입력/수정/삭제만 남긴다.
 
 // 본인 단가 이력(연/월별). 개인 대시보드에서 그 달 급여(출근일수 × 그 달 유효 단가)를 계산할 때 쓴다.
-export async function fetchRateHistory({ userId }) {
+export const fetchRateHistory = cached('fetchRateHistory', fetchRateHistoryFromServer)
+async function fetchRateHistoryFromServer({ userId }) {
   const { data, error } = await supabase
     .from('profile_rate_history')
     .select('user_id, year, month, rate')
