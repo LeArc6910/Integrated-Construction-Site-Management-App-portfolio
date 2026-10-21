@@ -6,6 +6,26 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.14] - 2026-10-21
+
+### 변경
+
+- **현장 목록이 빨리 뜨도록**: 현장마다 보여주는 "완료/전체 세대"를 DB에서 세어 결과만 받는다.
+  지금까지는 회사 전체 세대 체크를 앱으로 전부 내려받아 직접 셌는데, 한 번에 1000건씩 차례로 받느라
+  체크가 쌓일수록 목록이 느려졌다(1~2초). 체크 약 1만 건 기준으로 목록을 받는 시간이 4분의 1 정도로
+  줄었고, 체크가 더 쌓여도 거의 느려지지 않는다. 결제 〉 완료 현장 탭도 같은 계산을 써서 함께 빨라졌다.
+- **현장 목록은 지난번 내용을 먼저 보여준다**: 화면을 열면 지난번에 받은 목록을 바로 띄우고, 최신
+  목록이 오면 바꾼다. 그동안 제목 옆에 "최신 내용 확인 중…"이 보인다.
+
+### 수정
+
+- 현장 목록을 불러오는 동안 "등록된 현장이 없습니다"가 잠깐 보이던 것을 "불러오는 중…"으로 바꿨다.
+
+### 참고
+
+- DB 스키마 변경 있음: 함수 `site_completion_counts()` 추가(마이그레이션 `20261021010000`). 부른 사람의
+  권한으로 실행되어 지금처럼 자기 팀 현장만 집계된다. 앱이 이 함수를 쓰므로 배포 전에 DB에 먼저 올려야 한다.
+
 ## [1.0.13] - 2026-10-12
 
 ### 수정
@@ -504,6 +524,7 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.14]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.14
 [1.0.13]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.13
 [1.0.12]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.12
 [1.0.11]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.11

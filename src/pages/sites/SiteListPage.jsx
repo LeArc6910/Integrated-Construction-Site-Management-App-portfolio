@@ -7,7 +7,9 @@ import { useAuth } from '../../hooks/useAuth'
 
 export default function SiteListPage() {
   const { user } = useAuth()
-  const [sites, setSites] = useState([])
+  const [sites, setSites] = useState(null) // null: 불러오는 중(저장해 둔 목록도 없음)
+  // 저장해 둔 목록을 먼저 보여주는 동안 true. 서버에서 최신 목록이 오면 false가 된다.
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -22,19 +24,37 @@ export default function SiteListPage() {
     setQuery(searchInput.trim())
   }
 
-  const filteredSites = query ? sites.filter((site) => site.name.includes(query)) : sites
+  const list = sites ?? []
+  const filteredSites = query ? list.filter((site) => site.name.includes(query)) : list
 
   const load = useCallback(() => fetchSiteList({ userId: user.id }), [user.id])
 
+  // 현장이 많으면 집계를 받는 데 시간이 걸린다. 지난번에 받아 둔 목록을 먼저 띄워 두고,
+  // 서버 답이 오면 최신 목록으로 바꾼다(그 사이 숫자는 잠깐 지난번 값일 수 있다).
   useEffect(() => {
     let ignore = false
+    let fresh = false
+    fetchSiteList
+      .peek({ userId: user.id })
+      .then((rows) => {
+        if (ignore || fresh || !rows) return
+        setSites(rows)
+        setRefreshing(true)
+      })
+      .catch(() => {
+        // 저장해 둔 목록을 못 읽으면 서버 답만 기다린다
+      })
     load()
-      .then((rows) => !ignore && setSites(rows))
+      .then((rows) => {
+        fresh = true
+        if (!ignore) setSites(rows)
+      })
       .catch((err) => !ignore && setError(err.message))
+      .finally(() => !ignore && setRefreshing(false))
     return () => {
       ignore = true
     }
-  }, [load])
+  }, [load, user.id])
 
   async function reload() {
     try {
@@ -90,7 +110,10 @@ export default function SiteListPage() {
   return (
     <div>
       <div className="page-header-row">
-        <h2 className="page-title">현장 관리</h2>
+        <h2 className="page-title">
+          현장 관리
+          {refreshing && <span className="refresh-note">최신 내용 확인 중…</span>}
+        </h2>
         <div className="site-search">
           <input
             type="text"
@@ -112,8 +135,9 @@ export default function SiteListPage() {
       )}
 
       <div className="site-list-grid">
-        {sites.length === 0 && <p className="text-secondary">등록된 현장이 없습니다.</p>}
-        {sites.length > 0 && filteredSites.length === 0 && (
+        {sites === null && !error && <p className="text-secondary">불러오는 중…</p>}
+        {sites?.length === 0 && <p className="text-secondary">등록된 현장이 없습니다.</p>}
+        {list.length > 0 && filteredSites.length === 0 && (
           <p className="text-secondary">검색 결과가 없습니다.</p>
         )}
         {filteredSites.map((site) => (

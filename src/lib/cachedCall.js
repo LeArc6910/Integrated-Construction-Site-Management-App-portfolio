@@ -196,10 +196,21 @@ export async function cachedCall(key, fetcher, options) {
   return (await cachedCallInfo(key, fetcher, options)).data
 }
 
+// 저장해 둔 값을 서버를 기다리지 않고 바로 꺼낸다. 없으면 null.
+// 목록처럼 매번 열 때마다 기다리게 되는 화면이, 지난번 내용을 먼저 띄워 두고 최신 값으로 바꿀 때 쓴다.
+export async function peekCache(key, { scoped = true } = {}) {
+  const stored = await readCache(key, scoped)
+  return stored?.data ?? null
+}
+
 // 조회 함수를 감싸 캐시를 붙인다. 키는 이름 + 인자(JSON)로 만든다.
 //   export const fetchSites = cached('sites', async () => { ... })
+// fetchSites.peek(...같은 인자)로 저장해 둔 값만 바로 꺼낼 수 있다.
 export function cached(name, fn) {
-  return (...args) => cachedCall(`${name}:${JSON.stringify(args)}`, () => fn(...args))
+  const keyOf = (args) => `${name}:${JSON.stringify(args)}`
+  const call = (...args) => cachedCall(keyOf(args), () => fn(...args))
+  call.peek = (...args) => peekCache(keyOf(args))
+  return call
 }
 
 // 저장(쓰기) 요청이 나가면 뒤늦게 도착해 있던 조회 결과는 버린다. 그 값은 저장 전의 내용이라,

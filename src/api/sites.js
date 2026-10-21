@@ -1,6 +1,5 @@
 import { cached } from '../lib/cachedCall'
-import { isCrcSite, isUnitDone } from '../lib/siteMode'
-import { fetchAllRows, supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 // 삭제된 현장은 archived_at에 보관 시각이 찍힌다. 목록은 항상 사용 중인 현장만 보여준다.
 export const fetchSites = cached('fetchSites', fetchSitesFromServer)
@@ -10,64 +9,34 @@ async function fetchSitesFromServer() {
   return data
 }
 
-// 총 세대수/완료 세대수는 buildings·building_lines·unit_checks에 걸쳐 있어서, 몇 개 안
-// 되는 규모를 감안해 통째로 가져온 뒤 building_id로 묶어 집계한다. 세대표를 공유하는
-// 현장은 동이 원본(owner)에만 달려 있어 원본 기준으로 한 번만 계산한다.
-// sites는 { id, name, sheet_source_id }만 있으면 된다(name은 CRC 현장 판정용).
-async function computeCompletion(sites) {
-  const [buildingsRes, linesRes, checks] = await Promise.all([
-    supabase.from('buildings').select('id, site_id'),
-    supabase.from('building_lines').select('building_id, line_no, min_floor, max_floor'),
-    // 회사 전체 체크 수가 몇천 건이 될 수 있어 range로 나눠 끝까지 읽는다(그냥 select면
-    // PostgREST 기본 1000행 한도에 걸려 큰 현장의 완료 수가 조용히 덜 잡힌다).
-    fetchAllRows(() =>
-      supabase.from('unit_checks').select('building_id, line_no, floor, light, laminate').eq('sheet', 'main')
-    ),
-  ])
-  const error = buildingsRes.error || linesRes.error
+// 총 세대수/완료 세대수는 DB 함수(site_completion_counts)가 세대표 원본 현장별로 집계해 준다.
+// 예전에는 회사 전체 세대 체크를 앱으로 전부 받아 직접 셌는데, 1000행씩 나눠 차례로 받느라
+// 체크가 쌓일수록 목록이 느려졌다(2026-10). 세대표를 공유하는 현장은 원본의 값을 그대로 쓴다.
+async function fetchCompletionByOwner() {
+  const { data, error } = await supabase.rpc('site_completion_counts')
   if (error) throw error
-
-  const siteIdByBuilding = Object.fromEntries(buildingsRes.data.map((b) => [b.id, b.site_id]))
-  const ownerBySite = Object.fromEntries(sites.map((site) => [site.id, site.sheet_source_id ?? site.id]))
-
-  // 라인이 실제로 쓰는 층만 센다. 2층부터 시작하는 라인은 1층이 세대수에 들어가지 않는다.
   const totalByOwner = {}
-  const rangeByLine = {}
-  linesRes.data.forEach((line) => {
-    const min = line.min_floor ?? 1
-    rangeByLine[`${line.building_id}-${line.line_no}`] = { min, max: line.max_floor }
-    const owner = siteIdByBuilding[line.building_id]
-    totalByOwner[owner] = (totalByOwner[owner] ?? 0) + Math.max(0, line.max_floor - min + 1)
-  })
-
-  // 완료 기준은 현장마다 다르다. CRC 현장은 CRC(light) 하나, 그 외는 경량·합지 둘 다.
-  // 세대표를 공유하면 동이 원본에 달려 있으므로 원본 현장 이름으로 판단한다.
-  const crcByOwner = {}
-  sites.forEach((site) => {
-    const owner = site.sheet_source_id ?? site.id
-    if (owner === site.id) crcByOwner[owner] = isCrcSite(site.name)
-  })
-
-  // 층 범위를 좁히면 범위 밖 기록이 남아 있을 수 있다. 완료 수가 총 세대수를 넘지 않도록
-  // 지금 세대표에 실제로 보이는 칸만 센다.
   const completedByOwner = {}
-  checks.forEach((check) => {
-    const range = rangeByLine[`${check.building_id}-${check.line_no}`]
-    if (!range || check.floor < range.min || check.floor > range.max) return
-    const owner = siteIdByBuilding[check.building_id]
-    if (!isUnitDone(check, crcByOwner[owner] ?? false)) return
-    completedByOwner[owner] = (completedByOwner[owner] ?? 0) + 1
+  data.forEach((row) => {
+    totalByOwner[row.site_id] = Number(row.total_units)
+    completedByOwner[row.site_id] = Number(row.completed_units)
   })
+  return { totalByOwner, completedByOwner }
+}
 
-  return { siteIdByBuilding, ownerBySite, totalByOwner, completedByOwner }
+// 현장 id → 세대표 원본 현장 id. sites는 { id, sheet_source_id }만 있으면 된다.
+function ownerMapOf(sites) {
+  return Object.fromEntries(sites.map((site) => [site.id, site.sheet_source_id ?? site.id]))
 }
 
 // 결제〉완료 현장 탭처럼 현장별 완료 상태만 필요한 곳에서 쓴다.
 export async function fetchSiteStatusMap() {
-  const sitesRes = await supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null)
+  const [sitesRes, { totalByOwner, completedByOwner }] = await Promise.all([
+    supabase.from('sites').select('id, sheet_source_id').is('archived_at', null),
+    fetchCompletionByOwner(),
+  ])
   if (sitesRes.error) throw sitesRes.error
-
-  const { ownerBySite, totalByOwner, completedByOwner } = await computeCompletion(sitesRes.data)
+  const ownerBySite = ownerMapOf(sitesRes.data)
 
   return Object.fromEntries(
     sitesRes.data.map((site) => {
@@ -81,15 +50,20 @@ export async function fetchSiteStatusMap() {
 
 export const fetchSiteList = cached('fetchSiteList', fetchSiteListFromServer)
 async function fetchSiteListFromServer({ userId }) {
-  const [sitesRes, defectsRes, favoritesRes] = await Promise.all([
+  // 모두 서로 기다릴 필요가 없어 한 번에 보낸다(서버를 한 번만 오가는 시간에 끝난다)
+  const [sitesRes, defectsRes, favoritesRes, buildingsRes, { totalByOwner, completedByOwner }] = await Promise.all([
     supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null),
     supabase.from('defects').select('building_id, line_no, floor').eq('resolved', false),
     supabase.from('site_favorites').select('site_id').eq('user_id', userId),
+    // 미타공은 동 번호로만 와서, 어느 현장 것인지 알려면 동→현장 표가 필요하다
+    supabase.from('buildings').select('id, site_id'),
+    fetchCompletionByOwner(),
   ])
-  const error = sitesRes.error || defectsRes.error || favoritesRes.error
+  const error = sitesRes.error || defectsRes.error || favoritesRes.error || buildingsRes.error
   if (error) throw error
 
-  const { siteIdByBuilding, ownerBySite, totalByOwner, completedByOwner } = await computeCompletion(sitesRes.data)
+  const siteIdByBuilding = Object.fromEntries(buildingsRes.data.map((b) => [b.id, b.site_id]))
+  const ownerBySite = ownerMapOf(sitesRes.data)
 
   const favoriteSiteIds = new Set(favoritesRes.data.map((f) => f.site_id))
 

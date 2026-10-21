@@ -63,6 +63,14 @@ h3 {
   margin-bottom: 0;
 }
 
+/* 저장해 둔 목록을 먼저 보여주는 동안 제목 옆에 작게 띄운다(줄이 밀리지 않게 제목 안에 둔다) */
+.refresh-note {
+  margin-left: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .site-search {
   display: flex;
   gap: 6px;
