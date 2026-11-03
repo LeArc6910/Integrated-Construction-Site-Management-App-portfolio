@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  addSiteMember,
   addSiteReceipt,
   deleteSiteReceipt,
-  fetchAllProfiles,
   fetchPaymentSiteDetail,
-  removeSiteMember,
   unsetTip,
   updateContractAmount,
 } from '../../api/payment'
@@ -28,9 +25,6 @@ export default function PaymentSiteDetailPage() {
   const [contractInput, setContractInput] = useState('')
   const [addingReceipt, setAddingReceipt] = useState(false)
   const [receiptForm, setReceiptForm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1, amount: '' })
-  const [profiles, setProfiles] = useState([])
-  const [addingMember, setAddingMember] = useState(false)
-  const [memberId, setMemberId] = useState('')
 
   const load = useCallback(
     () => fetchPaymentSiteDetail({ siteId, year, month }),
@@ -46,12 +40,6 @@ export default function PaymentSiteDetailPage() {
       ignore = true
     }
   }, [load])
-
-  useEffect(() => {
-    fetchAllProfiles()
-      .then(setProfiles)
-      .catch((err) => setError(err.message))
-  }, [])
 
   async function reload() {
     try {
@@ -115,40 +103,6 @@ export default function PaymentSiteDetailPage() {
     }
   }
 
-  function openMemberModal() {
-    setMemberId(candidates[0]?.id ?? '')
-    setAddingMember(true)
-  }
-
-  async function handleAddMember() {
-    if (!memberId) return
-    setSaving(true)
-    setError('')
-    try {
-      await addSiteMember({ siteId, userId: memberId })
-      setAddingMember(false)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleRemoveMember(userId) {
-    setError('')
-    try {
-      await removeSiteMember({ siteId, userId })
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
-  // 이미 투입된 인원은 후보에서 뺀다 (site_members PK가 (site_id, user_id)라 중복 추가는 어차피 막힌다)
-  const memberIds = new Set(detail?.labor.map((row) => row.userId))
-  const candidates = profiles.filter((p) => !memberIds.has(p.id))
-
   return (
     <>
       <Link to="/payment/sites" className="back-btn">
@@ -183,8 +137,8 @@ export default function PaymentSiteDetailPage() {
               <div className="value">{formatWon(detail.remaining)}</div>
             </div>
             <div className="metric-card">
-              <div className="label">투입 인원</div>
-              <div className="value">{detail.labor.length}명</div>
+              <div className="label">{month}월 일한 인원</div>
+              <div className="value">{detail.labor.filter((row) => row.days > 0).length}명</div>
             </div>
           </div>
 
@@ -214,10 +168,7 @@ export default function PaymentSiteDetailPage() {
           </div>
 
           <div className="section-header">
-            <span className="section-label">인건비</span>
-            <button type="button" className="btn small" disabled={candidates.length === 0} onClick={openMemberModal}>
-              투입인원 추가
-            </button>
+            <span className="section-label">인건비 (그 달 이 현장 출근 기록 기준)</span>
           </div>
           <CalendarNav year={year} month={month} onChange={handleCalChange} />
           <div className="table">
@@ -227,11 +178,10 @@ export default function PaymentSiteDetailPage() {
               <span>급여</span>
               <span>실급여</span>
               <span>차액</span>
-              <span />
             </div>
             {detail.labor.length === 0 && (
               <div className="row">
-                <span className="text-secondary">투입 인원이 없습니다.</span>
+                <span className="text-secondary">{month}월에 이 현장에서 일한 사람이 없습니다.</span>
               </div>
             )}
             {detail.labor.map((row) => (
@@ -244,9 +194,6 @@ export default function PaymentSiteDetailPage() {
                   <GrossNote gross={row.gross} />
                 </span>
                 <span className="mono">{formatWon(row.gap)}</span>
-                <button type="button" className="link-btn" onClick={() => handleRemoveMember(row.userId)}>
-                  제외
-                </button>
               </div>
             ))}
           </div>
@@ -308,27 +255,6 @@ export default function PaymentSiteDetailPage() {
               취소
             </button>
             <button type="button" className="btn primary" disabled={saving} onClick={handleAddReceipt}>
-              추가
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {addingMember && (
-        <Modal title="투입인원 추가" onClose={() => setAddingMember(false)}>
-          <label>인원</label>
-          <select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
-            {candidates.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <div className="modal-actions">
-            <button type="button" className="btn" onClick={() => setAddingMember(false)}>
-              취소
-            </button>
-            <button type="button" className="btn primary" disabled={saving || !memberId} onClick={handleAddMember}>
               추가
             </button>
           </div>

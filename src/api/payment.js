@@ -131,34 +131,37 @@ export async function fetchCompletedPaymentSiteList({ year, month }) {
   return loadPaymentSites({ year, month, isCompleted: true })
 }
 
-// 인건비 표는 투입인원(site_members) 기준으로 만든다. 급여는 그 현장 그 달 출근일수 × 인사관리 단가.
+// 인건비 표는 그 달 이 현장에 출근 기록이 있는 사람으로 만든다. 출근 기록은 없지만 이 현장 실급여를
+// 입력한 사람도 출근일수 0일로 넣는다(입력 실수를 찾기 쉽게). 급여는 그 현장 그 달 출근일수 × 인사관리 단가.
 // 실급여는 개인 > 급여에서 "이 현장"으로 입력한 그 달 금액만 더한다(다른 현장에서 받은 급여는 제외).
 export async function fetchPaymentSiteDetail({ siteId, year, month }) {
   const { from, to } = monthRange(year, month)
-  const [siteRes, receiptsRes, membersRes, attendancesRes, actualByUser, rateHistoryRes, holeTotals] = await Promise.all([
+  const [siteRes, receiptsRes, profilesRes, attendancesRes, actualByUser, rateHistoryRes, holeTotals] = await Promise.all([
     supabase.from('sites').select('id, name, contract_amount, sheet_source_id').eq('id', siteId).single(),
     supabase.from('site_receipts').select('id, year, month, amount').eq('site_id', siteId).order('year').order('month'),
-    supabase.from('site_members').select('user_id, profiles(name)').eq('site_id', siteId),
+    supabase.from('profiles').select('id, name'),
     supabase.from('attendances').select('user_id, hours').eq('site_id', siteId).gte('work_date', from).lte('work_date', to),
     fetchSalaryTotalsByUser({ year, month, siteId: Number(siteId) }),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
     fetchHoleTotals(),
   ])
 
-  const error = siteRes.error || receiptsRes.error || membersRes.error || attendancesRes.error || rateHistoryRes.error
+  const error = siteRes.error || receiptsRes.error || profilesRes.error || attendancesRes.error || rateHistoryRes.error
   if (error) throw error
 
   const daysByUser = sumHoursByUser(attendancesRes.data)
   const totalReceived = receiptsRes.data.reduce((sum, r) => sum + r.amount, 0)
+  const nameById = Object.fromEntries(profilesRes.data.map((profile) => [profile.id, profile.name]))
+  const userIds = new Set([...Object.keys(daysByUser), ...Object.keys(actualByUser)])
 
-  const labor = membersRes.data
-    .map((member) => {
-      const days = daysByUser[member.user_id] ?? 0
-      const salary = days * effectiveRate(rateHistoryRes.data, member.user_id, year, month)
-      const { actual, gross } = actualByUser[member.user_id] ?? { actual: 0, gross: 0 }
+  const labor = [...userIds]
+    .map((userId) => {
+      const days = daysByUser[userId] ?? 0
+      const salary = days * effectiveRate(rateHistoryRes.data, userId, year, month)
+      const { actual, gross } = actualByUser[userId] ?? { actual: 0, gross: 0 }
       return {
-        userId: member.user_id,
-        name: member.profiles.name,
+        userId,
+        name: nameById[userId] ?? '(알 수 없음)',
         days,
         salary,
         actual,
@@ -184,24 +187,6 @@ export async function fetchProfileName(userId) {
   const { data, error } = await supabase.from('profiles').select('name').eq('id', userId).single()
   if (error) throw error
   return data.name
-}
-
-// 투입인원 추가 모달에서 고를 후보. 이미 투입된 인원은 화면에서 걸러낸다.
-export async function fetchAllProfiles() {
-  const { data, error } = await supabase.from('profiles').select('id, name').order('name')
-  if (error) throw error
-  return data
-}
-
-export async function addSiteMember({ siteId, userId }) {
-  const { error } = await supabase.from('site_members').insert({ site_id: siteId, user_id: userId })
-  if (error) throw error
-}
-
-// 투입인원에서 빼도 출근 기록은 그대로 남는다. 인건비 표에서만 사라진다.
-export async function removeSiteMember({ siteId, userId }) {
-  const { error } = await supabase.from('site_members').delete().eq('site_id', siteId).eq('user_id', userId)
-  if (error) throw error
 }
 
 // amount가 null이면 직접 입력을 지우고 자동 계산 값으로 돌아간다

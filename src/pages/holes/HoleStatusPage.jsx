@@ -1,6 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { DEFAULT_HOLE_PRICES, fetchHoleDashboard, fetchHoleTotals, saveHolePrices } from '../../api/holes'
+import {
+  fetchHoleDashboard,
+  fetchHoleTotals,
+  fetchTeamHolePrices,
+  resetSiteHolePrices,
+  saveHolePrices,
+  saveTeamHolePrices,
+} from '../../api/holes'
 import CalendarNav from '../../components/CalendarNav'
 import Modal from '../../components/Modal'
 import { usePeriod } from '../../hooks/usePeriod'
@@ -25,31 +32,54 @@ const PRICE_FIELDS = [
   { key: 'base', label: '기본' },
   { key: 'wallpad', label: '월패드' },
   { key: 'panel', label: '분전·통신함' },
+  { key: 'crc', label: 'CRC' },
 ]
 
-// 현장 타공 단가 수정. 결제 > 현장의 계약 금액 자동 계산에 쓰인다.
-function HolePriceModal({ site, prices, saving, error, onClose, onSubmit }) {
-  const [form, setForm] = useState(() => Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, String(prices[key])])))
+// 카드에 보여줄 단가: CRC 현장은 CRC 단가 하나로 계산하므로 그것만, 그 외는 CRC를 뺀 세 가지
+function cardPriceFields(crc) {
+  return crc ? PRICE_FIELDS.filter(({ key }) => key === 'crc') : PRICE_FIELDS.filter(({ key }) => key !== 'crc')
+}
+
+// 타공 단가 수정 창. 현장 하나(site)나 팀 전체 타공 단가(site 없음)를 고친다. 결제 > 현장의 계약 금액 자동 계산에 쓰인다.
+// teamPrices: 팀 전체 타공 단가(현장 단가를 따로 정하지 않은 현장이 따르는 값)
+// onSubmit({ prices, applyToAllSites }), onReset: 현장 단가를 지우고 전체 단가를 따르게 한다(현장 단가가 있을 때만)
+function HolePriceModal({ site = null, prices, teamPrices, ownSiteCount = 0, saving, error, onClose, onSubmit, onReset }) {
+  const [form, setForm] = useState(() =>
+    Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, String(prices[key] ?? teamPrices[key])]))
+  )
+  const [applyToAllSites, setApplyToAllSites] = useState(false)
   const [localError, setLocalError] = useState('')
+  const isTeam = !site
 
   function handleSubmit() {
     if (PRICE_FIELDS.some(({ key }) => form[key] === '')) {
       setLocalError('단가를 모두 입력하세요.')
       return
     }
-    onSubmit(Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, parseInt(form[key], 10)])))
+    onSubmit({
+      prices: Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, parseInt(form[key], 10)])),
+      applyToAllSites,
+    })
+  }
+
+  let scopeNote = '현장별 타공 단가를 따로 정하지 않은 현장은 모두 이 단가를 씁니다.'
+  if (!isTeam) {
+    scopeNote = site.ownPrice
+      ? '이 현장은 현장 타공 단가를 따로 쓰고 있습니다.'
+      : '이 현장은 지금 전체 타공 단가를 따르고 있습니다. 저장하면 이 현장만 따로 정한 단가를 씁니다.'
   }
 
   return (
-    <Modal title={`타공 단가 · ${site.name}`} onClose={onClose}>
+    <Modal title={isTeam ? '전체 타공 단가' : `타공 단가 · ${site.name}`} onClose={onClose}>
       <p className="text-secondary line-edit-hint">
         계약 금액 = 전체 타공 × 기본 단가 + 월패드 수 × (월패드 − 기본) + 분전·통신함 수 × (분전·통신함 − 기본). 월패드·분전
-        수는 세대표의 타공 설정에서 타입별로 정합니다.
+        수는 세대표의 타공 설정에서 타입별로 정합니다. 현장 이름에 CRC가 들어간 현장은 전체 타공 × CRC 단가로 계산합니다.
       </p>
+      <p className="text-secondary line-edit-hint">{scopeNote}</p>
       {PRICE_FIELDS.map(({ key, label }) => (
         <div key={key}>
           <label>
-            {label} 단가 (원, 기본값 {DEFAULT_HOLE_PRICES[key].toLocaleString()})
+            {label} 단가 (원{isTeam ? '' : `, 전체 단가 ${teamPrices[key].toLocaleString()}`})
           </label>
           <input
             type="text"
@@ -60,12 +90,23 @@ function HolePriceModal({ site, prices, saving, error, onClose, onSubmit }) {
           />
         </div>
       ))}
+      {isTeam && ownSiteCount > 0 && (
+        <label className="checkbox-line">
+          <input type="checkbox" checked={applyToAllSites} onChange={(e) => setApplyToAllSites(e.target.checked)} />
+          현장별로 따로 정한 단가({ownSiteCount}곳)도 모두 이 단가로 바꾸기
+        </label>
+      )}
       {(localError || error) && (
         <p className="auth-message error" role="alert">
           {localError || error}
         </p>
       )}
       <div className="modal-actions">
+        {!isTeam && site.ownPrice && (
+          <button type="button" className="btn" disabled={saving} onClick={onReset}>
+            전체 단가로 되돌리기
+          </button>
+        )}
         <button type="button" className="btn" onClick={onClose}>
           취소
         </button>
@@ -91,7 +132,8 @@ export default function HoleStatusPage() {
   const [searchInput, setSearchInput] = useState('')
   const [query, setQuery] = useState('')
   const [totals, setTotalsByOwner] = useState({})
-  const [priceSite, setPriceSite] = useState(null)
+  const [teamPrices, setTeamPrices] = useState(null)
+  const [priceSite, setPriceSite] = useState(null) // null | 'team' | 현장
   const [priceSaving, setPriceSaving] = useState(false)
   const [priceError, setPriceError] = useState('')
 
@@ -114,20 +156,27 @@ export default function HoleStatusPage() {
   // 현장별 단가와 자동 계약 금액(달과 무관)
   useEffect(() => {
     let ignore = false
-    fetchHoleTotals()
-      .then((result) => !ignore && setTotalsByOwner(result))
+    Promise.all([fetchHoleTotals(), fetchTeamHolePrices()])
+      .then(([result, team]) => {
+        if (ignore) return
+        setTotalsByOwner(result)
+        setTeamPrices(team)
+      })
       .catch((err) => !ignore && setError(err.message))
     return () => {
       ignore = true
     }
   }, [])
 
-  async function handleSavePrices(prices) {
+  // 단가를 바꾸면 계약 계산 값이 달라지므로 다시 받아온다
+  async function savePrices(action) {
     setPriceSaving(true)
     setPriceError('')
     try {
-      await saveHolePrices({ siteId: priceSite.id, prices })
-      setTotalsByOwner(await fetchHoleTotals())
+      await action()
+      const [result, team] = await Promise.all([fetchHoleTotals(), fetchTeamHolePrices()])
+      setTotalsByOwner(result)
+      setTeamPrices(team)
       setPriceSite(null)
     } catch (err) {
       setPriceError(err.message)
@@ -135,6 +184,20 @@ export default function HoleStatusPage() {
       setPriceSaving(false)
     }
   }
+
+  function handleSavePrices({ prices, applyToAllSites }) {
+    return savePrices(() =>
+      priceSite === 'team'
+        ? saveTeamHolePrices({ prices, applyToAllSites })
+        : saveHolePrices({ siteId: priceSite.id, prices })
+    )
+  }
+
+  function handleResetPrices() {
+    return savePrices(() => resetSiteHolePrices({ siteId: priceSite.id }))
+  }
+
+  const ownSiteCount = Object.values(totals).filter((total) => total.ownPrice).length
 
   function toggleSite(siteId) {
     setSiteFilter((prev) => (prev === siteId ? ALL_SITES : siteId))
@@ -169,6 +232,17 @@ export default function HoleStatusPage() {
       <div className="page-header-row">
         <h2 className="page-title">현장 타공 현황</h2>
         <div className="site-search">
+          <button
+            type="button"
+            className="btn small"
+            disabled={!teamPrices}
+            onClick={() => {
+              setPriceError('')
+              setPriceSite('team')
+            }}
+          >
+            전체 단가 수정
+          </button>
           <input
             type="text"
             placeholder="현장명 검색"
@@ -222,7 +296,7 @@ export default function HoleStatusPage() {
         {sites.map((site) => {
           const rate = percent(site.doneHoles, site.totalHoles)
           const total = totals[site.id]
-          const prices = total?.prices ?? DEFAULT_HOLE_PRICES
+          const prices = total?.prices ?? teamPrices ?? {}
           return (
             <div
               key={site.id}
@@ -252,16 +326,21 @@ export default function HoleStatusPage() {
               )}
               <div className="hole-price-row">
                 <span className="text-secondary">
-                  단가 {PRICE_FIELDS.map(({ key, label }) => `${label} ${(prices[key]).toLocaleString()}`).join(' · ')}
+                  단가{' '}
+                  {cardPriceFields(total?.crc)
+                    .map(({ key, label }) => `${label} ${(prices[key] ?? 0).toLocaleString()}`)
+                    .join(' · ')}
+                  {total && (total.ownPrice ? ' (현장 단가)' : ' (전체 단가)')}
                   {total && <> · 계약 계산 {formatWon(total.autoContract)}</>}
                 </span>
                 <button
                   type="button"
                   className="btn small"
+                  disabled={!teamPrices}
                   onClick={(e) => {
                     e.stopPropagation()
                     setPriceError('')
-                    setPriceSite(site)
+                    setPriceSite({ ...site, ownPrice: Boolean(total?.ownPrice) })
                   }}
                 >
                   단가 수정
@@ -349,14 +428,17 @@ export default function HoleStatusPage() {
         완료 세대는 경량·합지 중 나중에 체크된 날짜와 그 체크를 한 사람으로 셉니다. 체크를 해제하면 실적에서도 빠집니다.
       </p>
 
-      {priceSite && (
+      {priceSite && teamPrices && (
         <HolePriceModal
-          site={priceSite}
-          prices={totals[priceSite.id]?.prices ?? DEFAULT_HOLE_PRICES}
+          site={priceSite === 'team' ? null : priceSite}
+          prices={priceSite === 'team' ? teamPrices : (totals[priceSite.id]?.prices ?? teamPrices)}
+          teamPrices={teamPrices}
+          ownSiteCount={ownSiteCount}
           saving={priceSaving}
           error={priceError}
           onClose={() => setPriceSite(null)}
           onSubmit={handleSavePrices}
+          onReset={handleResetPrices}
         />
       )}
     </div>

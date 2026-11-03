@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { fetchAllRows, supabase } from '../lib/supabase'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -35,25 +35,28 @@ function effectiveRate(historyRows, userId, year, month) {
 }
 
 // 인사관리 목록: 인원별 그 달 출근일수·담당현장·단가·권한 (지출비용은 결제 > 지출비용으로 옮겨감)
-// 담당현장은 결제 > 현장 상세의 "투입 인원"(site_members)과 같은 기준이다. 삭제(보관)된 현장은 뺀다.
+// 담당현장은 그 달 출근 기록이 있는 현장이다(결제 > 현장 상세의 인건비 표와 같은 기준). 삭제(보관)된 현장은 뺀다.
 export async function fetchHrList({ year, month }) {
   const { from, to } = monthRange(year, month)
-  const [profilesRes, attendancesRes, rateHistoryRes, membersRes] = await Promise.all([
+  const [profilesRes, attendances, rateHistoryRes] = await Promise.all([
     supabase.from('profiles').select('id, name, role').order('name'),
-    supabase.from('attendances').select('user_id, hours').gte('work_date', from).lte('work_date', to),
+    // 출근 기록은 한 달에 몇백 건이 넘을 수 있어 끝까지 나눠 읽는다
+    fetchAllRows(() =>
+      supabase.from('attendances').select('id, user_id, hours, sites(name, archived_at)').gte('work_date', from).lte('work_date', to)
+    ),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
-    supabase.from('site_members').select('user_id, sites(name, archived_at)'),
   ])
 
-  const error = profilesRes.error || attendancesRes.error || rateHistoryRes.error || membersRes.error
+  const error = profilesRes.error || rateHistoryRes.error
   if (error) throw error
 
-  const daysByUser = sumByUser(attendancesRes.data, 'hours')
+  const daysByUser = sumByUser(attendances, 'hours')
 
   const sitesByUser = {}
-  membersRes.data.forEach((row) => {
+  attendances.forEach((row) => {
     if (!row.sites || row.sites.archived_at) return
-    ;(sitesByUser[row.user_id] ??= []).push(row.sites.name)
+    const names = (sitesByUser[row.user_id] ??= new Set())
+    names.add(row.sites.name)
   })
 
   return profilesRes.data.map((profile) => ({
@@ -62,7 +65,7 @@ export async function fetchHrList({ year, month }) {
     role: profile.role,
     rate: effectiveRate(rateHistoryRes.data, profile.id, year, month),
     days: daysByUser[profile.id] ?? 0,
-    sites: (sitesByUser[profile.id] ?? []).sort((a, b) => a.localeCompare(b)),
+    sites: [...(sitesByUser[profile.id] ?? [])].sort((a, b) => a.localeCompare(b)),
   }))
 }
 

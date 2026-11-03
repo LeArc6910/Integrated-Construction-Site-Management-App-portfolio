@@ -158,12 +158,15 @@ export async function setUnitOption({ cells, optionId, value }) {
 
 // ---- 타공 단가·계약 금액 ----
 
-// 현장에 단가를 따로 정하지 않았을 때의 기본 단가(원). DB 함수 site_hole_totals의 기본값과 같다.
-export const DEFAULT_HOLE_PRICES = { base: 1000, wallpad: 2000, panel: 3000 }
+// 팀 전체 단가도 정하지 않았을 때의 기본 단가(원). DB 함수 site_hole_totals의 기본값과 같다.
+// 단가는 현장 단가 → 팀 전체 단가 → 이 기본값 순서로 쓴다.
+export const DEFAULT_HOLE_PRICES = { base: 1000, wallpad: 2000, panel: 3000, crc: 1000 }
 
 // 세대표 원본 현장별 타공 합계와 단가, 자동 계약 금액(DB 함수 site_hole_totals).
 // 계약 금액 = 전체 타공 × 기본 단가 + 월패드 수 × (월패드 − 기본) + 분전·통신함 수 × (분전 − 기본)
-// 반환: { [원본 현장 id]: { totalHoles, wallpadHoles, panelHoles, unsetUnits, prices, autoContract } }
+// CRC 현장(원본 현장 이름에 CRC)은 전체 타공 × CRC 단가.
+// 반환: { [원본 현장 id]: { totalHoles, wallpadHoles, panelHoles, unsetUnits, prices, ownPrice, crc, autoContract } }
+//   ownPrice: 현장 단가를 따로 정했는지(false면 팀 전체 단가를 따른다)
 export async function fetchHoleTotals() {
   const { data, error } = await supabase.rpc('site_hole_totals')
   if (error) throw error
@@ -175,7 +178,9 @@ export async function fetchHoleTotals() {
         wallpadHoles: Number(row.wallpad_holes),
         panelHoles: Number(row.panel_holes),
         unsetUnits: Number(row.unset_units),
-        prices: { base: row.base_price, wallpad: row.wallpad_price, panel: row.panel_price },
+        prices: { base: row.base_price, wallpad: row.wallpad_price, panel: row.panel_price, crc: row.crc_price },
+        ownPrice: row.has_site_price,
+        crc: row.is_crc,
         autoContract: Number(row.auto_contract),
       },
     ])
@@ -190,11 +195,50 @@ export async function saveHolePrices({ siteId, prices }) {
       base_price: prices.base,
       wallpad_price: prices.wallpad,
       panel_price: prices.panel,
+      crc_price: prices.crc,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'site_id' }
   )
   if (error) throw error
+}
+
+// 현장 단가를 지워 팀 전체 단가를 따르게 한다
+export async function resetSiteHolePrices({ siteId }) {
+  const { error } = await supabase.from('site_hole_prices').delete().eq('site_id', siteId)
+  if (error) throw error
+}
+
+// 팀 전체 단가. 아직 정하지 않았으면 기본값.
+export async function fetchTeamHolePrices() {
+  const { data, error } = await supabase
+    .from('team_hole_prices')
+    .select('base_price, wallpad_price, panel_price, crc_price')
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return { ...DEFAULT_HOLE_PRICES }
+  return { base: data.base_price, wallpad: data.wallpad_price, panel: data.panel_price, crc: data.crc_price }
+}
+
+// 팀 전체 단가 저장. applyToAllSites면 현장별로 정한 단가를 모두 지워 전체 단가를 따르게 한다.
+// team_id는 기본값(current_team_id)으로 채워진다.
+export async function saveTeamHolePrices({ prices, applyToAllSites = false }) {
+  const { error } = await supabase.from('team_hole_prices').upsert(
+    {
+      base_price: prices.base,
+      wallpad_price: prices.wallpad,
+      panel_price: prices.panel,
+      crc_price: prices.crc,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'team_id' }
+  )
+  if (error) throw error
+  if (applyToAllSites) {
+    // 팀 격리 정책 때문에 지금 팀의 현장 단가만 지워진다
+    const { error: deleteError } = await supabase.from('site_hole_prices').delete().gte('site_id', 0)
+    if (deleteError) throw deleteError
+  }
 }
 
 // ---- 타공 현황·타공 설정 목록이 같이 쓰는 기초 데이터 ----

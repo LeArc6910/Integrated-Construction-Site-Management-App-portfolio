@@ -484,6 +484,20 @@ a.defect-photo {
   display: flex;
 }
 
+/* 창 안의 한 줄짜리 체크 항목(전체 타공 단가의 "현장 단가도 바꾸기" 등) */
+.modal-box label.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-weight: 400;
+}
+
+.modal-box label.checkbox-line input {
+  width: auto;
+  margin: 0;
+}
+
 /* 현장 타공 현황 카드의 단가 줄 */
 .hole-price-row {
   display: flex;
@@ -749,7 +763,7 @@ a.defect-photo {
 }
 
 .pay-labor-row {
-  grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
 }
 
 .receipt-row {

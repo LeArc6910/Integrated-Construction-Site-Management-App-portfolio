@@ -98,9 +98,18 @@ export default function DashboardTab({ userId: targetUserId = null, settlement =
     if (!bySite[r.siteId]) bySite[r.siteId] = { siteId: r.siteId, name: r.siteName, days: 0, salary: 0, entered: false }
     bySite[r.siteId].days += r.hours
   })
+  // 출근 기록이 없는 현장으로 실급여를 입력했으면 출근일수 0일로 카드를 보여준다(현장을 잘못 고른 입력을 찾기 쉽게)
   salaryEntries.forEach((entry) => {
+    if (!bySite[entry.siteId]) {
+      bySite[entry.siteId] = {
+        siteId: entry.siteId,
+        name: entry.siteName ?? '현장 미지정(이전 입력)',
+        days: 0,
+        salary: 0,
+        entered: false,
+      }
+    }
     const site = bySite[entry.siteId]
-    if (!site) return
     site.salary += entry.amount
     site.entered = true
   })
@@ -169,7 +178,7 @@ export default function DashboardTab({ userId: targetUserId = null, settlement =
                 실급여 {site.entered ? formatWon(site.salary) : '미입력'}
               </div>
               {isSelf && (
-                <button type="button" className="btn small site-salary-btn" onClick={() => setSalaryModal(site.siteId)}>
+                <button type="button" className="btn small site-salary-btn" onClick={() => setSalaryModal(site.siteId ?? '')}>
                   실급여 입력
                 </button>
               )}
