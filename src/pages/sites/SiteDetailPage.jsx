@@ -17,15 +17,21 @@ import {
   fetchCellLogs,
   fetchUserNames,
   loadSiteSheet,
+  newDefectPhotoPath,
+  refreshDefect,
   reorderBuildings,
   resolveDefect,
   saveSiteSections,
   setUnitChecks,
   updateBuilding,
+  updateDefect,
+  uploadDefectPhotos,
 } from '../../api/unitSheet'
 import { ensureSiteUnitTypes, fetchSiteHoleSetup, saveSiteHoleSetup, setUnitOption } from '../../api/holes'
 import { saveSheetSharing } from '../../api/sheetSharing'
 import { useAuth } from '../../hooks/useAuth'
+import { useDefectPhotoUrls } from '../../hooks/useDefectPhotoUrls'
+import { shrinkImage } from '../../lib/imageResize'
 import { unitHoleCount } from '../../lib/holes'
 import { isCrcOwner } from '../../lib/siteMode'
 import { unitNumber } from '../../lib/unitSheetLayout'
@@ -36,7 +42,7 @@ import { canvasToFile, downloadImageFile, renderUnitSheetImage, sheetImageFileNa
 import BuildingEditModal from './BuildingEditModal'
 import CellPanel from './CellPanel'
 import ChecklistPanel from './ChecklistPanel'
-import DefectAddModal from './DefectAddModal'
+import DefectFormModal from './DefectFormModal'
 import HoleSetupModal from './HoleSetupModal'
 import PastCheckConfirmModal from './PastCheckConfirmModal'
 import SectionEditModal from './SectionEditModal'
@@ -166,7 +172,7 @@ export default function SiteDetailPage() {
   const [panel, setPanel] = useState(null) // { buildingId, buildingName, lineNo, floor, kind }
   const [logs, setLogs] = useState([])
   const [selectedDefectId, setSelectedDefectId] = useState(null)
-  const [defectModal, setDefectModal] = useState(false)
+  const [defectModal, setDefectModal] = useState(null) // null | 'add' | 수정할 미타공
   const [buildingModal, setBuildingModal] = useState(false)
   const [sectionModal, setSectionModal] = useState(false)
   const [shareModal, setShareModal] = useState(false)
@@ -489,13 +495,23 @@ export default function SiteDetailPage() {
     }
   }
 
+  // 고른 사진을 줄이고 올릴 경로를 미리 정한다(온라인 시도와 대기 큐가 같은 경로를 쓴다)
+  function prepareUploads(files) {
+    return Promise.all(
+      files.map(async (file) => ({ path: newDefectPhotoPath(panel.buildingId), file: await shrinkImage(file) }))
+    )
+  }
+
   // 위치를 여러 개 고른 등록은 하나로 묶지 않고, 위치마다 별도의 미타공 건으로 나눠 등록한다.
-  async function handleAddDefect({ locations, content }) {
+  async function handleAddDefect({ locations, content, newFiles }) {
     setSaving(true)
     setError('')
     setNotice('')
     // 위치마다 요청 id를 미리 정해 둔다(온라인 시도와 대기 큐가 같은 id를 써야 중복 등록되지 않는다)
     const clientIds = locations.map(() => crypto.randomUUID())
+    // 사진은 줄여서 한 번만 올리고, 위치마다 나뉜 건들이 같은 경로를 함께 가리킨다
+    const uploads = await prepareUploads(newFiles)
+    const photoPaths = uploads.map((upload) => upload.path)
 
     // 신호가 없거나 약해서 서버에 못 보낼 때: 기기에 쌓아 두고 화면에는 바로 반영한다
     const saveOffline = async () => {
@@ -513,11 +529,15 @@ export default function SiteDetailPage() {
             userId: user.id,
             siteId: workSiteId,
             clientId,
+            photoPaths,
+            // 사진 파일은 첫 건만 들고 간다(큐는 순서대로 보내므로 뒤 건들이 저장될 땐 이미 올라가 있다)
+            photoUploads: index === 0 ? uploads : [],
           })
           pendingDefects.push({
             id: clientId,
             locations: [location],
             content,
+            photo_paths: photoPaths,
             created_by: user.id,
             created_at: new Date().toISOString(),
             resolved: false,
@@ -533,7 +553,7 @@ export default function SiteDetailPage() {
         ...prev,
         defects: { ...prev.defects, [key]: [...(prev.defects[key] ?? []), ...pendingDefects] },
       }))
-      setDefectModal(false)
+      setDefectModal(null)
       setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
       setSaving(false)
       return
@@ -541,6 +561,7 @@ export default function SiteDetailPage() {
     if (!navigator.onLine) return saveOffline()
 
     try {
+      await uploadDefectPhotos(uploads)
       let lastDefect = null
       for (const [index, location] of locations.entries()) {
         const defect = await addDefect({
@@ -550,6 +571,7 @@ export default function SiteDetailPage() {
           userId: user.id,
           siteId: workSiteId,
           clientId: clientIds[index],
+          photoPaths,
         })
         // 이미 등록된 요청(재시도)이면 행이 돌아오지 않는다. 로그도 다시 남기지 않는다.
         if (!defect) continue
@@ -562,7 +584,7 @@ export default function SiteDetailPage() {
         })
         lastDefect = defect
       }
-      setDefectModal(false)
+      setDefectModal(null)
       if (lastDefect) setSelectedDefectId(lastDefect.id)
       await reload()
       await refreshLogs()
@@ -572,6 +594,128 @@ export default function SiteDetailPage() {
       setError(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // 수정: 위치·내용·사진을 바꾼다
+  async function handleEditDefect({ locations, content, newFiles, keptPaths, removedPaths }) {
+    const defect = defectModal
+    setSaving(true)
+    setError('')
+    setNotice('')
+    const uploads = await prepareUploads(newFiles)
+    const photoPaths = [...keptPaths, ...uploads.map((upload) => upload.path)]
+    const updated = { ...defect, locations, content, photo_paths: photoPaths }
+
+    const saveOffline = async () => {
+      try {
+        await enqueueWrite('defectEdit', {
+          id: defect.id,
+          buildingId: panel.buildingId,
+          lineNo: panel.lineNo,
+          floor: panel.floor,
+          locations,
+          content,
+          photoPaths,
+          photoUploads: uploads,
+          removedPaths,
+          detail: defectSummary(updated),
+          userId: user.id,
+          clientId: crypto.randomUUID(),
+        })
+      } catch (err) {
+        setError(err.message)
+        setSaving(false)
+        return
+      }
+      const key = cellKey(panel.buildingId, panel.lineNo, panel.floor)
+      setSheet((prev) => ({
+        ...prev,
+        defects: {
+          ...prev.defects,
+          [key]: prev.defects[key].map((item) => (item.id === defect.id ? { ...updated, pending: true } : item)),
+        },
+      }))
+      setDefectModal(null)
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
+      setSaving(false)
+    }
+    if (!navigator.onLine) return saveOffline()
+
+    try {
+      await uploadDefectPhotos(uploads)
+      await updateDefect({ id: defect.id, locations, content, photoPaths, removedPaths })
+      await addUnitLog({
+        ...panel,
+        sheet: 'main',
+        action: '미타공 수정',
+        detail: defectSummary(updated),
+        userId: user.id,
+      })
+      setDefectModal(null)
+      await reload()
+      await refreshLogs()
+    } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다
+      if (isNetworkError(err)) return saveOffline()
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 갱신: 남아 있는 미타공의 등록 날짜를 누른 날로 바꾼다(다시 확인했다는 표시)
+  async function handleRefreshDefect() {
+    setError('')
+    setNotice('')
+    const defect = currentDefects.find((item) => item.id === selectedDefectId)
+    if (!defect || defect.pending) return
+    const at = new Date().toISOString()
+
+    const saveOffline = async () => {
+      try {
+        await enqueueWrite('defectRefresh', {
+          id: defect.id,
+          at,
+          buildingId: panel.buildingId,
+          lineNo: panel.lineNo,
+          floor: panel.floor,
+          detail: defectSummary(defect),
+          userId: user.id,
+          clientId: crypto.randomUUID(),
+        })
+      } catch (err) {
+        setError(err.message)
+        return
+      }
+      const key = cellKey(panel.buildingId, panel.lineNo, panel.floor)
+      setSheet((prev) => ({
+        ...prev,
+        defects: {
+          ...prev.defects,
+          [key]: prev.defects[key].map((item) => (item.id === defect.id ? { ...item, created_at: at, pending: true } : item)),
+        },
+      }))
+      setSelectedDefectId(null)
+      setNotice('연결이 원활하지 않아 기기에 임시 저장했습니다. 연결되면 자동으로 전송됩니다.')
+    }
+    if (!navigator.onLine) return saveOffline()
+
+    try {
+      await refreshDefect({ id: defect.id, at })
+      await addUnitLog({
+        ...panel,
+        sheet: 'main',
+        action: '미타공 갱신',
+        detail: defectSummary(defect),
+        userId: user.id,
+      })
+      await reload()
+      await refreshLogs()
+    } catch (err) {
+      // 신호가 약해 요청이 끊기면 오류로 끝내지 않고 대기 큐로 돌린다
+      if (isNetworkError(err)) return saveOffline()
+      setError(err.message)
     }
   }
 
@@ -893,6 +1037,7 @@ export default function SiteDetailPage() {
   )
 
   const currentDefects = panel ? (sheet.defects[cellKey(panel.buildingId, panel.lineNo, panel.floor)] ?? []) : []
+  const photoUrls = useDefectPhotoUrls(currentDefects)
 
   return (
     <div>
@@ -1121,7 +1266,13 @@ export default function SiteDetailPage() {
           onSelectDefect={(id) => setSelectedDefectId((prev) => (prev === id ? null : id))}
           onClose={closePanel}
           onClearCheck={handleClearCheck}
-          onAddDefect={() => setDefectModal(true)}
+          onAddDefect={() => setDefectModal('add')}
+          onEditDefect={() => {
+            const defect = currentDefects.find((item) => item.id === selectedDefectId)
+            if (defect && !defect.pending) setDefectModal(defect)
+          }}
+          onRefreshDefect={handleRefreshDefect}
+          photoUrls={photoUrls}
           onResolveDefect={handleResolveDefect}
           onDeleteDefect={handleDeleteDefect}
         />
@@ -1130,7 +1281,13 @@ export default function SiteDetailPage() {
       )}
 
       {defectModal && (
-        <DefectAddModal saving={saving} onClose={() => setDefectModal(false)} onSubmit={handleAddDefect} />
+        <DefectFormModal
+          defect={defectModal === 'add' ? null : defectModal}
+          photoUrls={photoUrls}
+          saving={saving}
+          onClose={() => setDefectModal(null)}
+          onSubmit={defectModal === 'add' ? handleAddDefect : handleEditDefect}
+        />
       )}
       {buildingModal && (
         <BuildingEditModal

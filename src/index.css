@@ -102,14 +102,19 @@ input[type='date'] {
   text-decoration: none;
 }
 
+/* 탭이 많아 한 줄에 다 안 들어가면(휴대폰의 결제 탭 등) 글자를 줄바꿈하지 않고 옆으로 밀어서 본다 */
 .tab-bar {
   display: flex;
   gap: 6px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .tab-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 9px 4px;
   margin-right: 14px;
   border-bottom: 2px solid transparent;
@@ -433,6 +438,108 @@ input[type='date'] {
 }
 
 /* 세대표를 공유하는 현장임을 알리는 한 줄 */
+/* 미타공 사진(등록·수정 창과 세대 정보창) */
+.defect-photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.defect-photo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.defect-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.defect-photo-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
+  padding: 0;
+  cursor: pointer;
+}
+
+a.defect-photo {
+  display: flex;
+}
+
+/* 현장 타공 현황 카드의 단가 줄 */
+.hole-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+}
+
+/* 물음표 표시에 손가락·마우스를 대면 설명이 뜨는 작은 도움말 */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.info-tip-text {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #333;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: left;
+}
+
+.info-tip:hover .info-tip-text,
+.info-tip:focus .info-tip-text {
+  display: block;
+}
+
 .site-card-share {
   margin: 8px 0 0;
   padding-top: 8px;
@@ -618,6 +725,27 @@ input[type='date'] {
 
 .pay-person-row {
   grid-template-columns: 1.2fr 1fr 1fr 1fr;
+}
+
+/* 결제 > 월말정산 */
+.settle-row {
+  grid-template-columns: 1.4fr 1fr auto;
+  align-items: center;
+}
+
+.settle-name {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.settle-name.complete {
+  color: var(--teal);
+}
+
+.kakao-btn {
+  background: #fee500;
+  border-color: #fee500;
+  color: #191919;
 }
 
 .pay-labor-row {
@@ -1524,6 +1652,13 @@ input[type='date'] {
   margin-top: 8px;
 }
 
+/* 미타공 수정·갱신은 한 줄에 나란히 */
+.panel-btn-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .defect-item {
   border-bottom: 1px solid var(--border);
   padding: 6px 0;
@@ -1660,6 +1795,33 @@ input[type='date'] {
   font-size: 12px;
 }
 
+/* 대시보드 현장별 출근일수 카드의 실급여 입력 상태 */
+.site-salary-status {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--red);
+}
+
+.site-salary-status.entered {
+  color: var(--teal);
+}
+
+.site-salary-btn {
+  margin-top: 8px;
+}
+
+/* 결제 > 월말정산 상세: 최종 차액 강조 */
+.metric-card.settlement-final {
+  margin-bottom: 12px;
+  background: var(--teal-bg);
+  border: 2px solid var(--teal);
+}
+
+.metric-card.settlement-final .value {
+  color: var(--teal);
+  font-size: 24px;
+}
+
 /* 개인 > 급여 */
 .salary-period-note {
   margin: -8px 0 12px;
@@ -1776,6 +1938,12 @@ input[type='date'] {
   grid-template-columns: 1fr 110px 36px;
   gap: 6px;
   align-items: center;
+}
+
+/* 타입 행은 타공 수 옆에 월패드·분전/통신함 수가 붙는다 */
+.hole-edit-head.hole-type-row,
+.hole-edit-row.hole-type-row {
+  grid-template-columns: 1fr 64px 64px 64px 36px;
 }
 
 .hole-edit-head {

@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchHoleDashboard } from '../../api/holes'
+import { DEFAULT_HOLE_PRICES, fetchHoleDashboard, fetchHoleTotals, saveHolePrices } from '../../api/holes'
 import CalendarNav from '../../components/CalendarNav'
+import Modal from '../../components/Modal'
 import { usePeriod } from '../../hooks/usePeriod'
 import { DOW } from '../../lib/calendar'
+import { formatWon } from '../../lib/format'
 import { summarizeWork } from '../../lib/holes'
 
 const ALL_SITES = '전체'
@@ -19,6 +21,62 @@ function dayLabel(date) {
   return `${m}/${d}(${DOW[new Date(y, m - 1, d).getDay()]})`
 }
 
+const PRICE_FIELDS = [
+  { key: 'base', label: '기본' },
+  { key: 'wallpad', label: '월패드' },
+  { key: 'panel', label: '분전·통신함' },
+]
+
+// 현장 타공 단가 수정. 결제 > 현장의 계약 금액 자동 계산에 쓰인다.
+function HolePriceModal({ site, prices, saving, error, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, String(prices[key])])))
+  const [localError, setLocalError] = useState('')
+
+  function handleSubmit() {
+    if (PRICE_FIELDS.some(({ key }) => form[key] === '')) {
+      setLocalError('단가를 모두 입력하세요.')
+      return
+    }
+    onSubmit(Object.fromEntries(PRICE_FIELDS.map(({ key }) => [key, parseInt(form[key], 10)])))
+  }
+
+  return (
+    <Modal title={`타공 단가 · ${site.name}`} onClose={onClose}>
+      <p className="text-secondary line-edit-hint">
+        계약 금액 = 전체 타공 × 기본 단가 + 월패드 수 × (월패드 − 기본) + 분전·통신함 수 × (분전·통신함 − 기본). 월패드·분전
+        수는 세대표의 타공 설정에서 타입별로 정합니다.
+      </p>
+      {PRICE_FIELDS.map(({ key, label }) => (
+        <div key={key}>
+          <label>
+            {label} 단가 (원, 기본값 {DEFAULT_HOLE_PRICES[key].toLocaleString()})
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={form[key]}
+            onChange={(e) => setForm({ ...form, [key]: e.target.value.replace(/[^0-9]/g, '') })}
+          />
+        </div>
+      ))}
+      {(localError || error) && (
+        <p className="auth-message error" role="alert">
+          {localError || error}
+        </p>
+      )}
+      <div className="modal-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          취소
+        </button>
+        <button type="button" className="btn primary" disabled={saving} onClick={handleSubmit}>
+          저장
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 function UnsetNote({ units }) {
   if (!units) return null
   return <span className="badge orange">미설정 {units.toLocaleString()}세대</span>
@@ -30,6 +88,12 @@ export default function HoleStatusPage() {
   const [error, setError] = useState('')
   const [siteFilter, setSiteFilter] = useState(ALL_SITES)
   const [openPerson, setOpenPerson] = useState(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [query, setQuery] = useState('')
+  const [totals, setTotalsByOwner] = useState({})
+  const [priceSite, setPriceSite] = useState(null)
+  const [priceSaving, setPriceSaving] = useState(false)
+  const [priceError, setPriceError] = useState('')
 
   const load = useCallback(() => fetchHoleDashboard({ year, month }), [year, month])
 
@@ -47,17 +111,45 @@ export default function HoleStatusPage() {
     }
   }, [load])
 
+  // 현장별 단가와 자동 계약 금액(달과 무관)
+  useEffect(() => {
+    let ignore = false
+    fetchHoleTotals()
+      .then((result) => !ignore && setTotalsByOwner(result))
+      .catch((err) => !ignore && setError(err.message))
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  async function handleSavePrices(prices) {
+    setPriceSaving(true)
+    setPriceError('')
+    try {
+      await saveHolePrices({ siteId: priceSite.id, prices })
+      setTotalsByOwner(await fetchHoleTotals())
+      setPriceSite(null)
+    } catch (err) {
+      setPriceError(err.message)
+    } finally {
+      setPriceSaving(false)
+    }
+  }
+
   function toggleSite(siteId) {
     setSiteFilter((prev) => (prev === siteId ? ALL_SITES : siteId))
     setOpenPerson(null)
   }
 
-  const sites = data?.sites ?? []
-  const totals = sites.reduce(
-    (sum, site) => ({
-      totalHoles: sum.totalHoles + site.totalHoles,
-      doneHoles: sum.doneHoles + site.doneHoles,
-      unsetUnits: sum.unsetUnits + site.unsetUnits,
+  // 검색은 현장 카드와 위 합계에만 건다(공유받는 현장 이름으로도 찾는다). 인원별 실적은 아래 현장 선택으로 고른다.
+  const sites = (data?.sites ?? []).filter(
+    (site) => !query || site.name.includes(query) || site.sharedWith.some((name) => name.includes(query))
+  )
+  const siteSum = sites.reduce(
+    (acc, site) => ({
+      totalHoles: acc.totalHoles + site.totalHoles,
+      doneHoles: acc.doneHoles + site.doneHoles,
+      unsetUnits: acc.unsetUnits + site.unsetUnits,
     }),
     { totalHoles: 0, doneHoles: 0, unsetUnits: 0 }
   )
@@ -74,7 +166,21 @@ export default function HoleStatusPage() {
 
   return (
     <div>
-      <h2 className="page-title">현장 타공 현황</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">현장 타공 현황</h2>
+        <div className="site-search">
+          <input
+            type="text"
+            placeholder="현장명 검색"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && setQuery(searchInput.trim())}
+          />
+          <button type="button" className="btn small" onClick={() => setQuery(searchInput.trim())}>
+            검색
+          </button>
+        </div>
+      </div>
 
       {error && (
         <p className="auth-message error" role="alert">
@@ -90,29 +196,33 @@ export default function HoleStatusPage() {
       <div className="card-grid">
         <div className="metric-card">
           <div className="label">전체 타공</div>
-          <div className="value">{totals.totalHoles.toLocaleString()}</div>
+          <div className="value">{siteSum.totalHoles.toLocaleString()}</div>
         </div>
         <div className="metric-card">
           <div className="label">완료 타공</div>
-          <div className="value">{totals.doneHoles.toLocaleString()}</div>
+          <div className="value">{siteSum.doneHoles.toLocaleString()}</div>
         </div>
         <div className="metric-card">
           <div className="label">남은 타공</div>
-          <div className="value">{(totals.totalHoles - totals.doneHoles).toLocaleString()}</div>
+          <div className="value">{(siteSum.totalHoles - siteSum.doneHoles).toLocaleString()}</div>
         </div>
       </div>
-      {totals.unsetUnits > 0 && (
+      {siteSum.unsetUnits > 0 && (
         <p className="share-warning hole-unset-warning">
-          타입이 없거나 타공 수가 정해지지 않은 세대가 {totals.unsetUnits.toLocaleString()}세대 있습니다. 이 세대들은
+          타입이 없거나 타공 수가 정해지지 않은 세대가 {siteSum.unsetUnits.toLocaleString()}세대 있습니다. 이 세대들은
           타공 합계에 들어가지 않습니다. 현장 세대표의 &quot;타공 설정&quot;에서 채워주세요.
         </p>
       )}
 
       <span className="section-label">현장별 (누르면 아래 인원별 실적이 그 현장만 보입니다)</span>
-      {data && sites.length === 0 && <p className="text-secondary">세대표가 있는 현장이 없습니다.</p>}
+      {data && sites.length === 0 && (
+        <p className="text-secondary">{query ? '검색 결과가 없습니다.' : '세대표가 있는 현장이 없습니다.'}</p>
+      )}
       <div className="site-list-grid">
         {sites.map((site) => {
           const rate = percent(site.doneHoles, site.totalHoles)
+          const total = totals[site.id]
+          const prices = total?.prices ?? DEFAULT_HOLE_PRICES
           return (
             <div
               key={site.id}
@@ -140,6 +250,23 @@ export default function HoleStatusPage() {
               {site.sharedWith.length > 0 && (
                 <p className="site-card-share">공유 세대표 · {site.sharedWith.join(', ')} 포함</p>
               )}
+              <div className="hole-price-row">
+                <span className="text-secondary">
+                  단가 {PRICE_FIELDS.map(({ key, label }) => `${label} ${(prices[key]).toLocaleString()}`).join(' · ')}
+                  {total && <> · 계약 계산 {formatWon(total.autoContract)}</>}
+                </span>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPriceError('')
+                    setPriceSite(site)
+                  }}
+                >
+                  단가 수정
+                </button>
+              </div>
             </div>
           )
         })}
@@ -158,7 +285,7 @@ export default function HoleStatusPage() {
             aria-label="현장 선택"
           >
             <option value={ALL_SITES}>현장 {ALL_SITES}</option>
-            {sites.map((site) => (
+            {(data?.sites ?? []).map((site) => (
               <option key={site.id} value={site.id}>
                 {site.name}
               </option>
@@ -221,6 +348,17 @@ export default function HoleStatusPage() {
       <p className="text-secondary">
         완료 세대는 경량·합지 중 나중에 체크된 날짜와 그 체크를 한 사람으로 셉니다. 체크를 해제하면 실적에서도 빠집니다.
       </p>
+
+      {priceSite && (
+        <HolePriceModal
+          site={priceSite}
+          prices={totals[priceSite.id]?.prices ?? DEFAULT_HOLE_PRICES}
+          saving={priceSaving}
+          error={priceError}
+          onClose={() => setPriceSite(null)}
+          onSubmit={handleSavePrices}
+        />
+      )}
     </div>
   )
 }

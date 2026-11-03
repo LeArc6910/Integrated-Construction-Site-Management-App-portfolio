@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { unsetTip } from '../../api/payment'
+import InfoTip from '../../components/InfoTip'
 import { formatWon } from '../../lib/format'
 import { loadSort, saveSort } from '../../lib/storedSort'
 
@@ -79,7 +81,10 @@ export default function PaymentSiteTable({ sites, emptyText, storageKey }) {
           onClick={() => navigate(`/payment/sites/${site.id}`)}
         >
           <span>{site.name}</span>
-          <span className="mono">{formatWon(site.contractAmount)}</span>
+          <span className="mono">
+            {formatWon(site.contractAmount)}
+            {site.unsetUnits > 0 && <InfoTip text={unsetTip(site.unsetUnits)} />}
+          </span>
           <span className="mono">{formatWon(site.receivedInMonth)}</span>
           <span className="mono">{formatWon(site.remaining)}</span>
         </div>

@@ -1,4 +1,12 @@
-import { DEFAULT_TAX, fetchSalaryTotalsByUser, fetchSiteTaxMap, grossUp, taxPercentFor } from './salaryTax'
+import { fetchHoleTotals } from './holes'
+import {
+  DEFAULT_TAX,
+  fetchDaysByUserSite,
+  fetchSalaryTotalsByUser,
+  fetchSiteTaxMap,
+  grossUp,
+  taxPercentFor,
+} from './salaryTax'
 import { fetchSiteStatusMap } from './sites'
 import { fetchAllRows, supabase } from '../lib/supabase'
 
@@ -60,13 +68,33 @@ function rateAt(historyRows, year, month) {
   return best?.rate ?? 0
 }
 
+// 계약 금액: 직접 입력한 값이 있으면 그 값, 없으면(null) 타공 수 × 단가로 자동 계산한 값(DB 함수 site_hole_totals).
+// 세대표를 공유받는 현장은 원본 현장의 타공 수·단가로 계산한다. unsetUnits: 타공 수를 정하지 않아 계산에서 빠진 세대 수.
+export function contractOf(site, holeTotals) {
+  const total = holeTotals[site.sheet_source_id ?? site.id]
+  const contractAuto = total?.autoContract ?? 0
+  const contractManual = site.contract_amount != null
+  return {
+    contractAmount: contractManual ? Number(site.contract_amount) : contractAuto,
+    contractAuto,
+    contractManual,
+    unsetUnits: total?.unsetUnits ?? 0,
+  }
+}
+
+// 계약 금액 옆 도움말: 타공 수를 정하지 않은 세대가 있어 자동 계산 금액이 덜 잡혔다는 안내
+export function unsetTip(units) {
+  return `타공 수를 정하지 않은 세대 ${units.toLocaleString()}세대는 자동 계산 금액에 들어가지 않았습니다. 현장 세대표의 타공 설정에서 채워주세요.`
+}
+
 // 수령금액은 선택한 달 기준, 남은금액은 전체 누적 기준이라 영수 내역을 통째로 가져와 두 번 집계한다.
 // isCompleted로 세대가 전부 체크된(완료) 현장과 진행 중인 현장을 갈라서 각 탭에 보여준다.
 async function loadPaymentSites({ year, month, isCompleted }) {
-  const [sitesRes, receiptsRes, statusMap] = await Promise.all([
-    supabase.from('sites').select('id, name, contract_amount').is('archived_at', null).order('name'),
+  const [sitesRes, receiptsRes, statusMap, holeTotals] = await Promise.all([
+    supabase.from('sites').select('id, name, contract_amount, sheet_source_id').is('archived_at', null).order('name'),
     supabase.from('site_receipts').select('site_id, year, month, amount'),
     fetchSiteStatusMap(),
+    fetchHoleTotals(),
   ])
 
   const error = sitesRes.error || receiptsRes.error
@@ -83,13 +111,16 @@ async function loadPaymentSites({ year, month, isCompleted }) {
 
   return sitesRes.data
     .filter((site) => (statusMap[site.id]?.status === '완료') === isCompleted)
-    .map((site) => ({
-      id: site.id,
-      name: site.name,
-      contractAmount: site.contract_amount ?? 0,
-      receivedInMonth: monthBySite[site.id] ?? 0,
-      remaining: (site.contract_amount ?? 0) - (totalBySite[site.id] ?? 0),
-    }))
+    .map((site) => {
+      const contract = contractOf(site, holeTotals)
+      return {
+        id: site.id,
+        name: site.name,
+        ...contract,
+        receivedInMonth: monthBySite[site.id] ?? 0,
+        remaining: contract.contractAmount - (totalBySite[site.id] ?? 0),
+      }
+    })
 }
 
 export async function fetchPaymentSiteList({ year, month }) {
@@ -104,13 +135,14 @@ export async function fetchCompletedPaymentSiteList({ year, month }) {
 // 실급여는 개인 > 급여에서 "이 현장"으로 입력한 그 달 금액만 더한다(다른 현장에서 받은 급여는 제외).
 export async function fetchPaymentSiteDetail({ siteId, year, month }) {
   const { from, to } = monthRange(year, month)
-  const [siteRes, receiptsRes, membersRes, attendancesRes, actualByUser, rateHistoryRes] = await Promise.all([
-    supabase.from('sites').select('id, name, contract_amount').eq('id', siteId).single(),
+  const [siteRes, receiptsRes, membersRes, attendancesRes, actualByUser, rateHistoryRes, holeTotals] = await Promise.all([
+    supabase.from('sites').select('id, name, contract_amount, sheet_source_id').eq('id', siteId).single(),
     supabase.from('site_receipts').select('id, year, month, amount').eq('site_id', siteId).order('year').order('month'),
     supabase.from('site_members').select('user_id, profiles(name)').eq('site_id', siteId),
     supabase.from('attendances').select('user_id, hours').eq('site_id', siteId).gte('work_date', from).lte('work_date', to),
     fetchSalaryTotalsByUser({ year, month, siteId: Number(siteId) }),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
+    fetchHoleTotals(),
   ])
 
   const error = siteRes.error || receiptsRes.error || membersRes.error || attendancesRes.error || rateHistoryRes.error
@@ -136,14 +168,22 @@ export async function fetchPaymentSiteDetail({ siteId, year, month }) {
     })
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  const contract = contractOf(siteRes.data, holeTotals)
   return {
     id: siteRes.data.id,
     name: siteRes.data.name,
-    contractAmount: siteRes.data.contract_amount ?? 0,
-    remaining: (siteRes.data.contract_amount ?? 0) - totalReceived,
+    ...contract,
+    remaining: contract.contractAmount - totalReceived,
     receipts: receiptsRes.data,
     labor,
   }
+}
+
+// 월말정산 상세 제목에 쓸 이름
+export async function fetchProfileName(userId) {
+  const { data, error } = await supabase.from('profiles').select('name').eq('id', userId).single()
+  if (error) throw error
+  return data.name
 }
 
 // 투입인원 추가 모달에서 고를 후보. 이미 투입된 인원은 화면에서 걸러낸다.
@@ -164,6 +204,7 @@ export async function removeSiteMember({ siteId, userId }) {
   if (error) throw error
 }
 
+// amount가 null이면 직접 입력을 지우고 자동 계산 값으로 돌아간다
 export async function updateContractAmount({ siteId, amount }) {
   const { error } = await supabase.from('sites').update({ contract_amount: amount }).eq('id', siteId)
   if (error) throw error
@@ -211,6 +252,49 @@ export async function fetchLaborList({ year, month }) {
       gap: salaryGap({ salary, gross }),
     }
   })
+}
+
+// 월말정산: 그 달에 출근했거나 지출이 있는 사람만, 최종 차액(급여 차액 + 지출 비용)과 함께 이름순으로.
+// complete: 그 달 출근한 현장마다 실급여(개인 > 급여)를 입력했는지. 하나라도 빠졌으면 false.
+export async function fetchSettlementList({ year, month }) {
+  const { from, to } = monthRange(year, month)
+  const [labor, daysByUserSite, expensesRes] = await Promise.all([
+    fetchLaborList({ year, month }),
+    fetchDaysByUserSite({ year, month }),
+    supabase.from('expenses').select('user_id, amount').gte('spent_on', from).lte('spent_on', to),
+  ])
+  if (expensesRes.error) throw expensesRes.error
+
+  const expenseByUser = {}
+  expensesRes.data.forEach((row) => {
+    expenseByUser[row.user_id] = (expenseByUser[row.user_id] ?? 0) + row.amount
+  })
+
+  const sitesByUser = {}
+  Object.entries(daysByUserSite).forEach(([key, days]) => {
+    if (!(days > 0)) return
+    const [userId, siteId] = key.split(':')
+    if (!sitesByUser[userId]) sitesByUser[userId] = []
+    sitesByUser[userId].push(Number(siteId))
+  })
+
+  return labor
+    .map((row) => {
+      const expense = expenseByUser[row.userId] ?? 0
+      const enteredSites = new Set(row.entries.map((entry) => entry.siteId))
+      const workedSites = sitesByUser[row.userId] ?? []
+      return {
+        userId: row.userId,
+        name: row.name,
+        days: row.days,
+        gap: row.gap,
+        expense,
+        finalGap: row.gap + expense,
+        complete: workedSites.every((siteId) => enteredSites.has(siteId)),
+        missingSites: workedSites.filter((siteId) => !enteredSites.has(siteId)).length,
+      }
+    })
+    .filter((row) => row.days > 0 || row.expense > 0)
 }
 
 // 실급여 목록은 월 선택과 무관하게 지금까지 입력된 전체를 일한 달 최신순으로 보여준다.

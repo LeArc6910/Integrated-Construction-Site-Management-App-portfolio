@@ -7,10 +7,12 @@ import {
   fetchAllProfiles,
   fetchPaymentSiteDetail,
   removeSiteMember,
+  unsetTip,
   updateContractAmount,
 } from '../../api/payment'
 import CalendarNav from '../../components/CalendarNav'
 import GrossNote from '../../components/GrossNote'
+import InfoTip from '../../components/InfoTip'
 import Modal from '../../components/Modal'
 import { usePeriod } from '../../hooks/usePeriod'
 import { formatDays, formatWon } from '../../lib/format'
@@ -68,11 +70,12 @@ export default function PaymentSiteDetailPage() {
     setEditingContract(true)
   }
 
-  async function handleSaveContract() {
+  // useAuto: 직접 입력을 지우고 타공 수 × 단가 자동 계산으로 돌아간다
+  async function handleSaveContract(useAuto = false) {
     setSaving(true)
     setError('')
     try {
-      await updateContractAmount({ siteId, amount: parseInt(contractInput, 10) || 0 })
+      await updateContractAmount({ siteId, amount: useAuto ? null : parseInt(contractInput, 10) || 0 })
       setEditingContract(false)
       await reload()
     } catch (err) {
@@ -164,12 +167,16 @@ export default function PaymentSiteDetailPage() {
           <div className="card-grid">
             <div className="metric-card">
               <div className="label">
-                계약 금액{' '}
+                계약 금액 {detail.contractManual ? '(직접 입력)' : '(자동 계산)'}
+                {detail.unsetUnits > 0 && <InfoTip text={unsetTip(detail.unsetUnits)} />}{' '}
                 <button type="button" className="btn small" onClick={openContractModal}>
                   수정
                 </button>
               </div>
               <div className="value">{formatWon(detail.contractAmount)}</div>
+              {detail.contractManual && (
+                <div className="gross-note">자동 계산 {formatWon(detail.contractAuto)}</div>
+              )}
             </div>
             <div className="metric-card">
               <div className="label">남은 금액</div>
@@ -248,6 +255,10 @@ export default function PaymentSiteDetailPage() {
 
       {editingContract && (
         <Modal title="계약 금액 수정" onClose={() => setEditingContract(false)}>
+          <p className="text-secondary line-edit-hint">
+            자동 계산: {formatWon(detail.contractAuto)} (타공 수 × 현장 타공 현황의 타공 단가)
+            {detail.unsetUnits > 0 && <> · 타공 수 미설정 {detail.unsetUnits.toLocaleString()}세대 제외</>}
+          </p>
           <label>계약 금액 (원)</label>
           <input
             type="number"
@@ -255,10 +266,15 @@ export default function PaymentSiteDetailPage() {
             onChange={(e) => setContractInput(e.target.value)}
           />
           <div className="modal-actions">
+            {detail.contractManual && (
+              <button type="button" className="btn" disabled={saving} onClick={() => handleSaveContract(true)}>
+                자동 계산으로 되돌리기
+              </button>
+            )}
             <button type="button" className="btn" onClick={() => setEditingContract(false)}>
               취소
             </button>
-            <button type="button" className="btn primary" disabled={saving} onClick={handleSaveContract}>
+            <button type="button" className="btn primary" disabled={saving} onClick={() => handleSaveContract()}>
               저장
             </button>
           </div>

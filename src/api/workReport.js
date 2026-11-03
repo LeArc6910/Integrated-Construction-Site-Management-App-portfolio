@@ -237,7 +237,7 @@ function coreName(label) {
 // 한 동의 한 층에서 오늘 한 세대를 묶음 목록으로 바꾼다.
 // - 그 층의 세대를 전부 했으면 '전체' 하나
 // - 코어 정보가 있고 한 코어를 통째로 했으면 코어 이름으로 묶는다(코어가 우선)
-// - 나머지는 그 층에서 이웃한 호끼리 '1701~1702호'로 묶는다
+// - 나머지는 그 층에서 이웃한 호끼리 '1701-1702호'로 묶는다
 // available: 그 층에 실제로 있는 라인들(세대표를 못 받았으면 null → 전체/코어 판단 없이 호수만 묶는다)
 function floorTokens(worked, available) {
   const covered = new Set()
@@ -288,19 +288,26 @@ function floorTokens(worked, available) {
   return tokens.sort((a, b) => a.first - b.first)
 }
 
+// 범위 표시는 물결(~) 대신 붙임표(-)를 쓴다. 카카오톡 등 메신저는 ~로 감싼 글자를 취소선 서식으로
+// 바꿔서, 한 줄에 범위가 둘 있으면("15~20층 1코어 / 21~26층 전체") 그 사이 글자에 줄이 그어지고
+// 물결 두 개가 사라졌다("1520층 … 2126층", 2026-11).
+const RANGE_SEP = '-'
+
 function renderToken(token, floor) {
   if (token.kind === 'core') return coreName(token.label)
   const { start, end } = token
   if (floor !== null) {
-    return start === end ? `${unitNo({ floor, lineNo: start })}호` : `${unitNo({ floor, lineNo: start })}~${unitNo({ floor, lineNo: end })}호`
+    return start === end
+      ? `${unitNo({ floor, lineNo: start })}호`
+      : `${unitNo({ floor, lineNo: start })}${RANGE_SEP}${unitNo({ floor, lineNo: end })}호`
   }
-  return start === end ? `${pad2(start)}호` : `${pad2(start)}~${pad2(end)}호`
+  return start === end ? `${pad2(start)}호` : `${pad2(start)}${RANGE_SEP}${pad2(end)}호`
 }
 
-// 층 묶음 하나를 글자로: "6~10층 1코어", "1~10층 전체", "1701~1702호"
+// 층 묶음 하나를 글자로: "6-10층 1코어", "1-10층 전체", "1701-1702호"
 function renderFloorGroup(group) {
   const single = group.startFloor === group.endFloor
-  const range = single ? `${group.startFloor}층` : `${group.startFloor}~${group.endFloor}층`
+  const range = single ? `${group.startFloor}층` : `${group.startFloor}${RANGE_SEP}${group.endFloor}층`
   if (group.tokens[0]?.kind === 'all') return `${range} 전체`
   const floor = single ? group.startFloor : null
   const body = group.tokens.map((token) => renderToken(token, floor)).join(', ')
@@ -308,7 +315,7 @@ function renderFloorGroup(group) {
   return single && group.tokens.every((token) => token.kind === 'run') ? body : `${range} ${body}`
 }
 
-// "101동: 6~10층 1코어 / 11층 1701~1702호" 처럼 동별로 한 줄씩 묶는다.
+// "101동: 6-10층 1코어 / 11층 1701-1702호" 처럼 동별로 한 줄씩 묶는다.
 // buildingById는 세대표의 동 목록(라인별 층 범위·코어 정보)이며, 없으면 호수만 묶는다.
 function unitLines(units, buildingById) {
   const byBuilding = []

@@ -21,6 +21,8 @@ import PaymentExpenseTab from './pages/payment/PaymentExpenseTab'
 import PaymentStatsTab from './pages/payment/PaymentStatsTab'
 import PaymentSiteDetailPage from './pages/payment/PaymentSiteDetailPage'
 import PaymentLaborDetailPage from './pages/payment/PaymentLaborDetailPage'
+import PaymentSettlementDetailPage from './pages/payment/PaymentSettlementDetailPage'
+import PaymentSettlementTab from './pages/payment/PaymentSettlementTab'
 import HrListPage from './pages/hr/HrListPage'
 import HrDetailPage from './pages/hr/HrDetailPage'
 import HoleStatusPage from './pages/holes/HoleStatusPage'
@@ -78,12 +80,14 @@ export const router = createBrowserRouter([
                   { path: 'sites', element: <PaymentSitesTab /> },
                   { path: 'completed-sites', element: <PaymentCompletedSitesTab /> },
                   { path: 'labor', element: <PaymentLaborTab /> },
+                  { path: 'settlement', element: <PaymentSettlementTab /> },
                   { path: 'expenses', element: <PaymentExpenseTab /> },
                   { path: 'stats', element: <PaymentStatsTab /> },
                 ],
               },
               { path: 'payment/sites/:siteId', element: <PaymentSiteDetailPage /> },
               { path: 'payment/labor/:userId', element: <PaymentLaborDetailPage /> },
+              { path: 'payment/settlement/:userId', element: <PaymentSettlementDetailPage /> },
             ],
           },
 

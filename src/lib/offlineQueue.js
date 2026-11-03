@@ -8,8 +8,11 @@ import {
   clearUnitCheck,
   defectSummary,
   deleteDefect,
+  refreshDefect,
   resolveDefect,
   setUnitChecks,
+  updateDefect,
+  uploadDefectPhotos,
 } from '../api/unitSheet'
 import { idbDelete, idbGetAll, idbPut, STORES } from './idb'
 
@@ -71,7 +74,9 @@ const HANDLERS = {
     }
   },
   defectAdd: async (payload) => {
-    const defect = await addDefect(payload)
+    // 이전 버전에서 쌓인 항목에는 사진이 없다
+    await uploadDefectPhotos(payload.photoUploads ?? [])
+    const defect = await addDefect({ ...payload, photoPaths: payload.photoPaths ?? [] })
     if (!defect) return // 이미 등록된 요청(재시도)이면 로그도 다시 남기지 않는다
     await addUnitLog({
       buildingId: payload.buildingId,
@@ -80,6 +85,38 @@ const HANDLERS = {
       sheet: 'main',
       action: '미타공 등록',
       detail: defectSummary(defect),
+      userId: payload.userId,
+    })
+  },
+  defectEdit: async (payload) => {
+    await uploadDefectPhotos(payload.photoUploads)
+    await updateDefect({
+      id: payload.id,
+      locations: payload.locations,
+      content: payload.content,
+      photoPaths: payload.photoPaths,
+      removedPaths: payload.removedPaths,
+    })
+    await addUnitLog({
+      buildingId: payload.buildingId,
+      lineNo: payload.lineNo,
+      floor: payload.floor,
+      sheet: 'main',
+      action: '미타공 수정',
+      detail: payload.detail,
+      userId: payload.userId,
+    })
+  },
+  defectRefresh: async (payload) => {
+    // 등록 날짜는 보낸 시점이 아니라 갱신을 누른 시점(at)으로 남긴다
+    await refreshDefect({ id: payload.id, at: payload.at })
+    await addUnitLog({
+      buildingId: payload.buildingId,
+      lineNo: payload.lineNo,
+      floor: payload.floor,
+      sheet: 'main',
+      action: '미타공 갱신',
+      detail: payload.detail,
       userId: payload.userId,
     })
   },

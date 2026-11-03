@@ -1,4 +1,5 @@
-import { effectiveRate } from './payment'
+import { fetchHoleTotals } from './holes'
+import { contractOf, effectiveRate } from './payment'
 import { supabase } from '../lib/supabase'
 
 function pad2(n) {
@@ -27,13 +28,14 @@ export async function fetchPaymentStats({ mode, year, month }) {
   const { from, to } = periodRange(mode, year, month)
   const months = periodMonths(mode, month)
 
-  const [sitesRes, receiptsRes, profilesRes, attendancesRes, rateHistoryRes, expensesRes] = await Promise.all([
-    supabase.from('sites').select('id, name, contract_amount').is('archived_at', null).order('name'),
+  const [sitesRes, receiptsRes, profilesRes, attendancesRes, rateHistoryRes, expensesRes, holeTotals] = await Promise.all([
+    supabase.from('sites').select('id, name, contract_amount, sheet_source_id').is('archived_at', null).order('name'),
     supabase.from('site_receipts').select('site_id, amount').eq('year', year).in('month', months),
     supabase.from('profiles').select('id, name').order('name'),
     supabase.from('attendances').select('user_id, hours, work_date').gte('work_date', from).lte('work_date', to),
     supabase.from('profile_rate_history').select('user_id, year, month, rate'),
     supabase.from('expenses').select('user_id, amount').gte('spent_on', from).lte('spent_on', to),
+    fetchHoleTotals(),
   ])
 
   const error =
@@ -84,7 +86,7 @@ export async function fetchPaymentStats({ mode, year, month }) {
   const bySite = sitesRes.data.map((site) => ({
     id: site.id,
     name: site.name,
-    contractAmount: site.contract_amount ?? 0,
+    contractAmount: contractOf(site, holeTotals).contractAmount,
     received: receivedBySite[site.id] ?? 0,
   }))
 

@@ -143,6 +143,23 @@ function drawLegend(ctx, rightX, y, withHighlight, crc) {
   })
 }
 
+// 호수 행(위쪽 머리행·아래쪽 요약 첫 줄 공통). 높이가 LINE_HEAD_H면 타입이 있는 라인은 호수 아래에 타입을 적는다.
+function drawLineRow(ctx, x, y, tableWidth, lines, height) {
+  ctx.fillStyle = COLORS.head
+  ctx.fillRect(x, y, tableWidth, height)
+  strokeCell(ctx, x, y, FLOOR_W, height)
+  lines.forEach((line, i) => {
+    const cx = x + FLOOR_W + i * CELL_W
+    strokeCell(ctx, cx, y, CELL_W, height)
+    if (line.unit_type && height >= LINE_HEAD_H) {
+      centerText(ctx, `${line.line_no}호`, cx, y + 2, CELL_W, height / 2, { size: 11, weight: 600 })
+      centerText(ctx, line.unit_type, cx, y + height / 2 - 1, CELL_W, height / 2, { size: 10, color: COLORS.sub })
+    } else {
+      centerText(ctx, `${line.line_no}호`, cx, y, CELL_W, height, { size: 11, weight: 600 })
+    }
+  })
+}
+
 function fillSwatch(ctx, x, y, color) {
   ctx.fillStyle = color
   ctx.fillRect(x, y, 18, 14)
@@ -158,12 +175,15 @@ export function renderUnitSheetImage({ title, buildings, checks, highlightKeys =
   const drawable = buildings.filter((building) => building.lines.length > 0)
   const floors = sharedFloorsOf(drawable)
   const withCore = drawable.some(hasCoreInfo)
+  // 타입이 적힌 라인이 있으면 아래쪽 호수 행에도 타입을 같이 적는다(위쪽 머리행과 같은 높이)
+  const withType = drawable.some((building) => building.lines.some((line) => line.unit_type))
+  const bottomLineH = withType ? LINE_HEAD_H : SUMMARY_H
   const { total, completed } = countCompletion(drawable, checks, crc)
 
   const widths = drawable.map((building) => FLOOR_W + building.lines.length * CELL_W)
   const contentWidth = widths.reduce((sum, w) => sum + w, 0) + Math.max(0, drawable.length - 1) * BUILDING_GAP
   const tableHeight =
-    NAME_H + LINE_HEAD_H + floors.length * CELL_H + SUMMARY_H + (withCore ? SUMMARY_H : 0) + TOTAL_H
+    NAME_H + LINE_HEAD_H + floors.length * CELL_H + bottomLineH + (withCore ? SUMMARY_H : 0) + TOTAL_H
   const width = Math.max(MIN_WIDTH, PAD * 2 + contentWidth)
   const height = PAD + HEADER_H + (drawable.length ? tableHeight : 40) + PAD
 
@@ -220,22 +240,7 @@ export function renderUnitSheetImage({ title, buildings, checks, highlightKeys =
     let y = top + NAME_H
 
     // 호·타입 머리행
-    ctx.fillStyle = COLORS.head
-    ctx.fillRect(x, y, tableWidth, LINE_HEAD_H)
-    strokeCell(ctx, x, y, FLOOR_W, LINE_HEAD_H)
-    lines.forEach((line, i) => {
-      const cx = x + FLOOR_W + i * CELL_W
-      strokeCell(ctx, cx, y, CELL_W, LINE_HEAD_H)
-      if (line.unit_type) {
-        centerText(ctx, `${line.line_no}호`, cx, y + 2, CELL_W, LINE_HEAD_H / 2, { size: 11, weight: 600 })
-        centerText(ctx, line.unit_type, cx, y + LINE_HEAD_H / 2 - 1, CELL_W, LINE_HEAD_H / 2, {
-          size: 10,
-          color: COLORS.sub,
-        })
-      } else {
-        centerText(ctx, `${line.line_no}호`, cx, y, CELL_W, LINE_HEAD_H, { size: 11, weight: 600 })
-      }
-    })
+    drawLineRow(ctx, x, y, tableWidth, lines, LINE_HEAD_H)
     y += LINE_HEAD_H
 
     // 층별 세대 칸
@@ -293,15 +298,8 @@ export function renderUnitSheetImage({ title, buildings, checks, highlightKeys =
     })
 
     // 하단 요약: 호수 → 코어(연속 병합) → 동 이름·총 세대수·최고층
-    ctx.fillStyle = COLORS.head
-    ctx.fillRect(x, y, tableWidth, SUMMARY_H)
-    strokeCell(ctx, x, y, FLOOR_W, SUMMARY_H)
-    lines.forEach((line, i) => {
-      const cx = x + FLOOR_W + i * CELL_W
-      strokeCell(ctx, cx, y, CELL_W, SUMMARY_H)
-      centerText(ctx, `${line.line_no}호`, cx, y, CELL_W, SUMMARY_H, { size: 11, weight: 600 })
-    })
-    y += SUMMARY_H
+    drawLineRow(ctx, x, y, tableWidth, lines, bottomLineH)
+    y += bottomLineH
 
     if (withCore) {
       ctx.fillStyle = COLORS.head

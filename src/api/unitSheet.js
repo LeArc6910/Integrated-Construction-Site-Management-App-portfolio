@@ -88,7 +88,9 @@ export async function fetchSiteSheet({ siteId }) {
     ),
     supabase
       .from('defects')
-      .select('id, building_id, line_no, floor, locations, content, resolved, created_by, created_at, resolved_by, resolved_at')
+      .select(
+        'id, building_id, line_no, floor, locations, content, photo_paths, resolved, created_by, created_at, resolved_by, resolved_at'
+      )
       .in('building_id', buildingIds)
       .order('created_at'),
   ])
@@ -233,7 +235,7 @@ export async function clearUnitCheck({ buildingId, lineNo, floor, sheet, prev = 
 // clientId(클라이언트에서 생성한 UUID)로 upsert해서, 오프라인 큐가 같은 등록을 두 번
 // 보내도 중복 등록되지 않는다. 중복으로 무시된 경우(ignoreDuplicates)에는 행이 반환되지
 // 않으니 maybeSingle을 쓴다.
-export async function addDefect({ buildingId, lineNo, floor, locations, content, userId, clientId, siteId = null }) {
+export async function addDefect({ buildingId, lineNo, floor, locations, content, userId, clientId, siteId = null, photoPaths = [] }) {
   const { data, error } = await supabase
     .from('defects')
     .upsert(
@@ -243,6 +245,7 @@ export async function addDefect({ buildingId, lineNo, floor, locations, content,
         floor,
         locations,
         content,
+        photo_paths: photoPaths,
         created_by: userId,
         client_id: clientId,
         created_site_id: siteId,
@@ -263,9 +266,70 @@ export async function resolveDefect({ id, userId, siteId = null }) {
   if (error) throw error
 }
 
+// 미타공을 지우면 그 건에만 쓰인 사진도 같이 지운다
 export async function deleteDefect({ id }) {
-  const { error } = await supabase.from('defects').delete().eq('id', id)
+  const { data, error } = await supabase.from('defects').delete().eq('id', id).select('photo_paths')
   if (error) throw error
+  await removeUnusedDefectPhotos(data?.[0]?.photo_paths ?? [])
+}
+
+// 수정: 위치·내용·사진을 바꾼다. removedPaths는 이 건에서 뺀 사진(다른 건이 안 쓰면 파일도 지운다).
+export async function updateDefect({ id, locations, content, photoPaths, removedPaths = [] }) {
+  const { error } = await supabase
+    .from('defects')
+    .update({ locations, content, photo_paths: photoPaths })
+    .eq('id', id)
+  if (error) throw error
+  await removeUnusedDefectPhotos(removedPaths)
+}
+
+// 갱신: 아직 남아 있는 미타공을 누른 시각으로 다시 등록한 것처럼 등록 날짜를 바꾼다.
+// at: 누른 시각(대기 큐로 늦게 보내도 누른 시각으로 남긴다)
+export async function refreshDefect({ id, at = new Date() }) {
+  const { error } = await supabase
+    .from('defects')
+    .update({ created_at: new Date(at).toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ---- 미타공 사진 (비공개 버킷 defect-photos, 경로 "{동 id}/{uuid}.jpg") ----
+
+const DEFECT_PHOTO_BUCKET = 'defect-photos'
+
+// 경로는 올리기 전에 미리 정한다. 위치마다 나뉘는 여러 건과 대기 큐가 같은 경로를 쓰게 하기 위해서다.
+export function newDefectPhotoPath(buildingId) {
+  return `${buildingId}/${crypto.randomUUID()}.jpg`
+}
+
+// uploads: [{ path, file }]. 대기 큐가 같은 사진을 다시 보내도 덮어쓰기만 되도록 upsert로 올린다.
+export async function uploadDefectPhotos(uploads) {
+  for (const { path, file } of uploads) {
+    const { error } = await supabase.storage
+      .from(DEFECT_PHOTO_BUCKET)
+      .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+    if (error) throw error
+  }
+}
+
+// { [경로]: 잠깐 쓸 수 있는 주소 }
+export async function defectPhotoUrls(paths) {
+  if (paths.length === 0) return {}
+  const { data, error } = await supabase.storage.from(DEFECT_PHOTO_BUCKET).createSignedUrls(paths, 600)
+  if (error) throw error
+  return Object.fromEntries(data.filter((item) => item.signedUrl).map((item) => [item.path, item.signedUrl]))
+}
+
+// 위치를 여러 개 골라 등록하면 여러 건이 같은 사진을 함께 가리킨다. 다른 건이 아직 쓰는 사진은 남긴다.
+async function removeUnusedDefectPhotos(paths) {
+  if (paths.length === 0) return
+  const { data, error } = await supabase.from('defects').select('photo_paths').overlaps('photo_paths', paths)
+  if (error) throw error
+  const stillUsed = new Set(data.flatMap((row) => row.photo_paths))
+  const unused = paths.filter((path) => !stillUsed.has(path))
+  if (unused.length === 0) return
+  const { error: removeError } = await supabase.storage.from(DEFECT_PHOTO_BUCKET).remove(unused)
+  if (removeError) throw removeError
 }
 
 export async function addUnitLogs({ cells, sheet, action, detail, userId }) {

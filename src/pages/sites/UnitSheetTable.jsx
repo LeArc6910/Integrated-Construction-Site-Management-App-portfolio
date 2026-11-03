@@ -28,7 +28,9 @@ function SummaryRows({ building }) {
         <td className="floor-head summary-head" />
         {building.lines.map((line) => (
           <td key={line.line_no} className="summary-cell line-no-cell">
-            {line.line_no}호
+            <div>{line.line_no}호</div>
+            {/* 층이 많으면 맨 위 타입이 화면 밖으로 밀려나서 아래 호수 행에도 같이 적는다 */}
+            {line.unit_type && <div className="line-head-type">{line.unit_type}</div>}
           </td>
         ))}
       </tr>

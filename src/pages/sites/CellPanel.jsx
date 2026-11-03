@@ -40,6 +40,33 @@ function HoleRow({ info }) {
   )
 }
 
+// 미타공에 붙은 사진. 누르면 새 창에서 크게 본다. 주소를 아직 못 받았으면(연결 없음) 자리만 보여준다.
+function DefectPhotos({ paths, urls }) {
+  if (!paths?.length) return null
+  return (
+    <div className="defect-photo-grid">
+      {paths.map((path) =>
+        urls[path] ? (
+          <a
+            key={path}
+            className="defect-photo"
+            href={urls[path]}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img src={urls[path]} alt="미타공 사진" />
+          </a>
+        ) : (
+          <div key={path} className="defect-photo">
+            <span className="text-secondary">사진</span>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 function LogSection({ logs, names }) {
   return (
     <div className="log-section">
@@ -68,10 +95,13 @@ export default function CellPanel({
   selectedDefectId,
   crc = false,
   holeInfo = null,
+  photoUrls = {},
   onSelectDefect,
   onClose,
   onClearCheck,
   onAddDefect,
+  onEditDefect,
+  onRefreshDefect,
   onResolveDefect,
   onDeleteDefect,
 }) {
@@ -126,6 +156,7 @@ export default function CellPanel({
                 {defect.resolved && <span className="badge teal">처리완료</span>}
                 {defect.pending && <span className="badge orange">동기화 대기중</span>}
               </div>
+              <DefectPhotos paths={defect.photo_paths} urls={photoUrls} />
               <div className="text-secondary log-meta">
                 등록: {actorLabel(names, defect.created_by, defect.created_at)}
               </div>
@@ -140,6 +171,14 @@ export default function CellPanel({
           <button type="button" className="btn primary block panel-btn" onClick={onAddDefect}>
             등록
           </button>
+          <div className="panel-btn-pair">
+            <button type="button" className="btn block panel-btn" disabled={!selectable} onClick={onEditDefect}>
+              수정
+            </button>
+            <button type="button" className="btn block panel-btn" disabled={!selectable} onClick={onRefreshDefect}>
+              갱신
+            </button>
+          </div>
           <button type="button" className="btn block panel-btn" disabled={!selectable} onClick={onResolveDefect}>
             처리 완료
           </button>

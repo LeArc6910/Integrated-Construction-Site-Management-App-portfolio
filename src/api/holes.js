@@ -13,7 +13,7 @@ const UNIT_OPTION_KEY = ['building_id', 'line_no', 'floor', 'option_id']
 export const fetchSiteHoleSetup = cached('fetchSiteHoleSetup', fetchSiteHoleSetupFromServer)
 async function fetchSiteHoleSetupFromServer({ siteId, buildingIds }) {
   const [typesRes, optionsRes] = await Promise.all([
-    supabase.from('site_unit_types').select('id, name, hole_count').eq('site_id', siteId).order('sort_order').order('name'),
+    supabase.from('site_unit_types').select('id, name, hole_count, wallpad_count, panel_count').eq('site_id', siteId).order('sort_order').order('name'),
     supabase.from('site_unit_options').select('id, name, hole_delta').eq('site_id', siteId).order('sort_order').order('name'),
   ])
   if (typesRes.error) throw typesRes.error
@@ -50,7 +50,8 @@ export async function ensureSiteUnitTypes({ siteId, names }) {
 }
 
 // 타공 설정 모달에서 한 번에 저장한다.
-// types/options: [{ id, name, holeCount | holeDelta, originalName }] — id가 null이면 새로 만든다.
+// types: [{ id, name, holeCount, wallpadCount, panelCount, originalName }], options: [{ id, name, holeDelta }]
+// — id가 null이면 새로 만든다.
 // 라인은 타입을 이름(글자)으로 들고 있어서, 타입 이름을 바꾸면 이 현장 동들의 라인 값도 같이 바꾼다.
 export async function saveSiteHoleSetup({ siteId, buildingIds, types, removedTypeIds, options, removedOptionIds }) {
   if (removedTypeIds.length > 0) {
@@ -74,7 +75,13 @@ export async function saveSiteHoleSetup({ siteId, buildingIds, types, removedTyp
   }
 
   for (const [index, type] of types.entries()) {
-    const row = { name: type.name, hole_count: type.holeCount, sort_order: index }
+    const row = {
+      name: type.name,
+      hole_count: type.holeCount,
+      wallpad_count: type.wallpadCount ?? 0,
+      panel_count: type.panelCount ?? 0,
+      sort_order: index,
+    }
     const { error } = type.id
       ? await supabase.from('site_unit_types').update(row).eq('id', type.id)
       : await supabase.from('site_unit_types').insert({ ...row, site_id: siteId })
@@ -149,6 +156,47 @@ export async function setUnitOption({ cells, optionId, value }) {
   if (failed) throw failed.error
 }
 
+// ---- 타공 단가·계약 금액 ----
+
+// 현장에 단가를 따로 정하지 않았을 때의 기본 단가(원). DB 함수 site_hole_totals의 기본값과 같다.
+export const DEFAULT_HOLE_PRICES = { base: 1000, wallpad: 2000, panel: 3000 }
+
+// 세대표 원본 현장별 타공 합계와 단가, 자동 계약 금액(DB 함수 site_hole_totals).
+// 계약 금액 = 전체 타공 × 기본 단가 + 월패드 수 × (월패드 − 기본) + 분전·통신함 수 × (분전 − 기본)
+// 반환: { [원본 현장 id]: { totalHoles, wallpadHoles, panelHoles, unsetUnits, prices, autoContract } }
+export async function fetchHoleTotals() {
+  const { data, error } = await supabase.rpc('site_hole_totals')
+  if (error) throw error
+  return Object.fromEntries(
+    data.map((row) => [
+      row.site_id,
+      {
+        totalHoles: Number(row.total_holes),
+        wallpadHoles: Number(row.wallpad_holes),
+        panelHoles: Number(row.panel_holes),
+        unsetUnits: Number(row.unset_units),
+        prices: { base: row.base_price, wallpad: row.wallpad_price, panel: row.panel_price },
+        autoContract: Number(row.auto_contract),
+      },
+    ])
+  )
+}
+
+// siteId에는 세대표 원본 현장 id를 넘긴다(타공 수와 같은 기준)
+export async function saveHolePrices({ siteId, prices }) {
+  const { error } = await supabase.from('site_hole_prices').upsert(
+    {
+      site_id: siteId,
+      base_price: prices.base,
+      wallpad_price: prices.wallpad,
+      panel_price: prices.panel,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'site_id' }
+  )
+  if (error) throw error
+}
+
 // ---- 타공 현황·타공 설정 목록이 같이 쓰는 기초 데이터 ----
 
 // 보관되지 않은 현장의 세대표(동·라인)와 타입표·옵션표, 세대별 옵션을 통째로 받아 현장 기준으로 묶는다.
@@ -158,7 +206,7 @@ async function fetchHoleBase() {
     supabase.from('sites').select('id, name, sheet_source_id').is('archived_at', null).order('name'),
     supabase.from('buildings').select('id, site_id'),
     fetchAllRows(() => supabase.from('building_lines').select('building_id, line_no, min_floor, max_floor, unit_type')),
-    supabase.from('site_unit_types').select('id, site_id, name, hole_count').order('sort_order').order('name'),
+    supabase.from('site_unit_types').select('id, site_id, name, hole_count, wallpad_count, panel_count').order('sort_order').order('name'),
     supabase.from('site_unit_options').select('id, site_id, name, hole_delta').order('sort_order').order('name'),
     fetchAllRows(() => supabase.from('unit_options').select('building_id, line_no, floor, option_id'), UNIT_OPTION_KEY),
   ])

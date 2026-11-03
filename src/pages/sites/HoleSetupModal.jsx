@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Modal from '../../components/Modal'
 
 // 세대 타공 수 = 타입 기본 타공 수 + 세대에 붙은 옵션 가감 합 (src/lib/holes.js)
+// 타입에는 그 타공 중 월패드·분전/통신함이 몇 개인지도 적는다. 전체 타공 수는 그대로이고, 단가 계산에만 쓰인다.
 // 이 모달은 현장 타입표와 옵션표를 한 번에 고친다. 세대에 옵션을 붙이는 건 세대표의 "옵션 지정"에서 한다.
 
 let tempSeq = 0
@@ -11,7 +12,15 @@ function tempKey() {
 }
 
 function toTypeRow(type) {
-  return { key: type.id, id: type.id, originalName: type.name, name: type.name, hole: type.hole_count == null ? '' : String(type.hole_count) }
+  return {
+    key: type.id,
+    id: type.id,
+    originalName: type.name,
+    name: type.name,
+    hole: type.hole_count == null ? '' : String(type.hole_count),
+    wallpad: type.wallpad_count ? String(type.wallpad_count) : '',
+    panel: type.panel_count ? String(type.panel_count) : '',
+  }
 }
 
 function toOptionRow(option) {
@@ -26,6 +35,11 @@ function toOptionRow(option) {
 
 function digitsOnly(value) {
   return value.replace(/[^0-9]/g, '')
+}
+
+// 비워 둔 월패드·분전 칸은 0개
+function toCount(value) {
+  return value === '' ? 0 : parseInt(value, 10)
 }
 
 // siteName: 현장 밖(타공 설정 메뉴)에서 열 때 어느 현장인지 제목에 붙인다
@@ -64,6 +78,13 @@ export default function HoleSetupModal({ siteName, types, options, lineCountByTy
       setError('같은 이름의 타입이 두 개 있습니다.')
       return
     }
+    const overflow = typeRows.find(
+      (row) => row.hole !== '' && toCount(row.wallpad) + toCount(row.panel) > parseInt(row.hole, 10)
+    )
+    if (overflow) {
+      setError(`${overflow.name.trim()}: 월패드·분전/통신함 수가 타공 수보다 많습니다.`)
+      return
+    }
 
     const optionNames = optionRows.map((row) => row.name.trim())
     if (optionNames.some((name) => !name)) {
@@ -86,6 +107,8 @@ export default function HoleSetupModal({ siteName, types, options, lineCountByTy
         name: typeNames[index],
         // 비워 두면 미설정(null)로 저장되어 타공 현황에서 따로 표시된다
         holeCount: row.hole === '' ? null : parseInt(row.hole, 10),
+        wallpadCount: toCount(row.wallpad),
+        panelCount: toCount(row.panel),
       })),
       removedTypeIds,
       options: optionRows.map((row, index) => ({
@@ -104,14 +127,16 @@ export default function HoleSetupModal({ siteName, types, options, lineCountByTy
       </p>
 
       <label>타입별 타공 수</label>
-      <div className="hole-edit-head">
+      <div className="hole-edit-head hole-type-row">
         <span>타입</span>
         <span>타공 수</span>
+        <span>월패드</span>
+        <span>분전·통신함</span>
         <span />
       </div>
       {typeRows.length === 0 && <p className="text-secondary">등록된 타입이 없습니다.</p>}
       {typeRows.map((row) => (
-        <div key={row.key} className="hole-edit-row">
+        <div key={row.key} className="hole-edit-row hole-type-row">
           <div>
             <input
               type="text"
@@ -129,6 +154,24 @@ export default function HoleSetupModal({ siteName, types, options, lineCountByTy
             value={row.hole}
             onChange={(e) => patchType(row.key, { hole: digitsOnly(e.target.value) })}
           />
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="0"
+            aria-label="월패드 타공 수"
+            value={row.wallpad}
+            onChange={(e) => patchType(row.key, { wallpad: digitsOnly(e.target.value) })}
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="0"
+            aria-label="분전·통신함 타공 수"
+            value={row.panel}
+            onChange={(e) => patchType(row.key, { panel: digitsOnly(e.target.value) })}
+          />
           <button type="button" className="btn small" onClick={() => removeType(row)} aria-label="타입 삭제">
             ✕
           </button>
@@ -137,12 +180,14 @@ export default function HoleSetupModal({ siteName, types, options, lineCountByTy
       <button
         type="button"
         className="btn small hole-add-btn"
-        onClick={() => setTypeRows((rows) => [...rows, { key: tempKey(), id: null, name: '', hole: '' }])}
+        onClick={() =>
+          setTypeRows((rows) => [...rows, { key: tempKey(), id: null, name: '', hole: '', wallpad: '', panel: '' }])
+        }
       >
         + 타입 추가
       </button>
       <p className="text-secondary line-edit-hint">
-        타입 이름을 바꾸면 세대표 라인의 타입도 같이 바뀝니다. 타입을 지워도 라인에 적힌 타입은 남고 미설정으로 셉니다.
+        월패드·분전/통신함은 타공 수 안에 포함된 개수입니다(타공 수는 그대로이고 단가만 달라집니다). 타입 이름을 바꾸면 세대표 라인의 타입도 같이 바뀝니다. 타입을 지워도 라인에 적힌 타입은 남고 미설정으로 셉니다.
       </p>
 
       <label>옵션 (세대별 타공 가감)</label>
