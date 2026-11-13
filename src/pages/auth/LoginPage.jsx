@@ -98,6 +98,9 @@ export default function LoginPage() {
         <Link to="/signup" className="btn block">
           회원가입
         </Link>
+        <Link to="/forgot-password" state={{ email: email.trim() }} className="btn block">
+          비밀번호 찾기
+        </Link>
       </form>
     </div>
   )

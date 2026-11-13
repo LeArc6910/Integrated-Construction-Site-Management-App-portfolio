@@ -25,6 +25,15 @@ const authStorage = {
   },
 }
 
+// 비밀번호 재설정 메일의 링크가 열리는 화면
+export const RESET_PASSWORD_PATH = '/reset-password'
+
+// 재설정 링크는 Supabase 설정(Redirect URLs)에 이 주소가 없으면 첫 화면(Site URL)으로 열린다. 그러면 로그인만
+// 되고 새 비밀번호를 정할 기회가 없으므로, 클라이언트가 주소의 로그인 정보를 읽기 전에 재설정 화면으로 옮겨 둔다.
+if (/[#&]type=recovery(&|$)/.test(window.location.hash) && window.location.pathname !== RESET_PASSWORD_PATH) {
+  window.history.replaceState(null, '', RESET_PASSWORD_PATH + window.location.hash)
+}
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 

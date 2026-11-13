@@ -4,6 +4,8 @@ import ProtectedRoute from './components/routing/ProtectedRoute'
 import RoleRoute from './components/routing/RoleRoute'
 import LoginPage from './pages/auth/LoginPage'
 import SignupPage from './pages/auth/SignupPage'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
+import ResetPasswordPage from './pages/auth/ResetPasswordPage'
 import PersonalPage from './pages/personal/PersonalPage'
 import DashboardTab from './pages/personal/DashboardTab'
 import AttendanceTab from './pages/personal/AttendanceTab'
@@ -31,10 +33,14 @@ import UpcomingPage from './pages/upcoming/UpcomingPage'
 import LeaderPage from './pages/leader/LeaderPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import DevPage from './pages/dev/DevPage'
+import { RESET_PASSWORD_PATH } from './lib/supabase'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  // 재설정 메일의 링크로 들어오면 로그인된 상태가 되므로 ProtectedRoute 밖에 둔다(로그인 화면처럼 앱으로 튕기지 않게)
+  { path: RESET_PASSWORD_PATH, element: <ResetPasswordPage /> },
   {
     element: <ProtectedRoute />,
     children: [

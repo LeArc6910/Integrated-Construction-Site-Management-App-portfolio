@@ -6,6 +6,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며
 [유의적 버전](https://semver.org/lang/ko/)을 쓴다.
 
+## [1.0.17] - 2026-11-13
+
+### 추가
+
+- **비밀번호 찾기**: 로그인 화면의 [비밀번호 찾기]에서 ID(이메일)를 넣으면 재설정 메일이 간다. 메일의 링크를 누르면
+  새 비밀번호를 정하는 화면이 열리고, 저장하면 그대로 앱으로 들어간다. 링크가 만료됐거나 이미 쓴 링크면 그렇다고
+  알려주고 메일을 다시 받을 수 있게 한다. 가입되지 않은 이메일을 넣어도 가입 여부는 알려주지 않는다.
+
+### 변경
+
+- 새 비밀번호가 지금 비밀번호와 같으면 "다른 비밀번호를 입력해주세요"라고 알려준다(설정 화면도 같다).
+
+### 참고
+
+- DB 스키마 변경 없음.
+- Supabase 대시보드 설정이 필요하다.
+  - Authentication 〉 URL Configuration 〉 Redirect URLs에 `https://(앱 주소)/reset-password`를 추가한다. 빠뜨리면
+    링크가 첫 화면(Site URL)으로 열리는데, 그때도 앱이 재설정 화면으로 옮겨 준다. 단, 만료된 링크 안내는 나오지 않는다.
+  - Supabase 기본 메일 서버는 시간당 보낼 수 있는 메일 수가 매우 적고, 프로젝트 팀원이 아닌 주소로는 보내지 않는다.
+    직원들이 실제로 메일을 받으려면 Authentication 〉 SMTP Settings에 메일 발송 서비스를 연결해야 한다.
+
 ## [1.0.16] - 2026-11-04
 
 ### 추가
@@ -596,6 +617,7 @@
 - 팀원 / 팀장 / 개발자 3단계. 권한 없는 메뉴는 렌더링하지 않고 DB의 RLS로 한 번 더
   막는다.
 
+[1.0.17]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.17
 [1.0.16]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.16
 [1.0.15]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.15
 [1.0.14]: https://github.com/LeArc6910/Integrated-Construction-Site-Management-App-portfolio/releases/tag/v1.0.14

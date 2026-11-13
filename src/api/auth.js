@@ -1,5 +1,5 @@
 import { cachedCall } from '../lib/cachedCall'
-import { supabase } from '../lib/supabase'
+import { RESET_PASSWORD_PATH, supabase } from '../lib/supabase'
 
 export const MIN_PASSWORD_LENGTH = 6
 
@@ -29,6 +29,15 @@ export async function signUp({ name, email, password, teamId }) {
 // 가입 직후 인증 메일을 못 받았거나 유효시간이 지났을 때 다시 보낸다.
 export async function resendConfirmationEmail({ email }) {
   const { error } = await supabase.auth.resend({ type: 'signup', email })
+  if (error) throw error
+}
+
+// 비밀번호 재설정 메일을 보낸다. 메일의 링크를 누르면 그 계정으로 로그인된 채 새 비밀번호 화면이 열린다.
+// 가입되지 않은 이메일이어도 에러 없이 성공으로 응답한다(가입 여부를 알려주지 않는 Supabase 동작).
+export async function sendPasswordResetEmail({ email }) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}${RESET_PASSWORD_PATH}`,
+  })
   if (error) throw error
 }
 
@@ -92,6 +101,7 @@ const AUTH_ERROR_MESSAGES = {
   user_already_exists: '이미 가입된 ID입니다.',
   email_exists: '이미 가입된 ID입니다.',
   weak_password: '비밀번호가 너무 단순합니다. 더 길고 복잡하게 설정해주세요.',
+  same_password: '지금 쓰는 비밀번호와 다른 비밀번호를 입력해주세요.',
   email_address_invalid: '사용할 수 없는 이메일 주소입니다.',
   signup_disabled: '현재 회원가입이 중단된 상태입니다. 관리자에게 문의해주세요.',
   over_email_send_rate_limit: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
